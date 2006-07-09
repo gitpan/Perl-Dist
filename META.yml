@@ -1,0 +1,27 @@
+abstract: Create binary Perl distributions
+author: David A Golden <dagolden@cpan.org>
+distribution_type: module
+generated_by: Module::Install version 0.63
+license: perl
+name: Perl-Dist
+no_index: 
+  directory: 
+    - inc
+    - t
+requires: 
+  Archive::Tar: 1.29
+  Archive::Zip: 1.16
+  CPAN: 0
+  File::Copy::Recursive: 0.25
+  File::Find::Rule: 0.3
+  File::Path: 1.08
+  File::Spec: 3.17
+  File::pushd: 0.32
+  HTTP::Status: 1.28
+  IPC::Run3: 0.034
+  LWP::UserAgent: 2.033
+  Perl6::Say: 0.04
+  Sub::Exporter: 0.966
+  Tie::File: 0
+  YAML: 0.62
+version: 0.000001
