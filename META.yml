@@ -24,4 +24,4 @@ requires:
   Sub::Exporter: 0.966
   Tie::File: 0
   YAML: 0.62
-version: 0.000001
+version: 0.000002
