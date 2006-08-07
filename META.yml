@@ -20,8 +20,7 @@ requires:
   HTTP::Status: 1.28
   IPC::Run3: 0.034
   LWP::UserAgent: 2.033
-  Perl6::Say: 0.04
-  Sub::Exporter: 0.966
+  Perl6::Say: 0.06
   Tie::File: 0
   YAML: 0.62
-version: 0.000002
+version: 0.000003
