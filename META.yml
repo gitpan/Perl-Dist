@@ -1,7 +1,7 @@
 abstract: Create binary Perl distributions
 author: David A Golden <dagolden@cpan.org>
 distribution_type: module
-generated_by: Module::Install version 0.640
+generated_by: Module::Install version 0.64
 license: perl
 name: Perl-Dist
 no_index: 
@@ -24,4 +24,4 @@ requires:
   Tie::File: 0
   YAML: 0.62
   version: 0.6701
-version: v0.0.4
+version: 0.0.5
