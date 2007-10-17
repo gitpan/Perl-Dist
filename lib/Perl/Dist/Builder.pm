@@ -1,36 +1,95 @@
 package Perl::Dist::Builder;
 
-use version; $VERSION = qv("0.0.5")->stringify;
+use 5.005;
 use strict;
-use warnings; 
+
+use vars qw{$VERSION};
+BEGIN {
+	$VERSION = '0.06';
+}
 
 #--------------------------------------------------------------------------#
 # Imports
 #--------------------------------------------------------------------------#
 
-use Archive::Tar;
-use Archive::Zip;
-use Carp;
-use CPAN ();
-use File::Basename qw/basename dirname/;
-use File::Copy::Recursive qw/rcopy/;
-use File::Find::Rule;
-use File::Path qw/mkpath rmtree/;
-use File::pushd;
-use File::Spec::Functions qw/catdir catfile tmpdir splitpath/;
-use File::Spec::Unix; # for canonpath
-use HTTP::Status;
-use IPC::Run3;
-use LWP::UserAgent;
-use Perl6::Say;
-use Tie::File;
-use YAML ();
+use Carp                  ();
+use File::Spec            ();
+use File::Spec::Unix      ();
+use File::Basename        ();
+use File::Path            ();
+use File::Remove          ();
+use File::Copy::Recursive ();
+use File::Find::Rule      ();
+use File::pushd           ();
+use File::ShareDir        ();
+use Perl::Dist::Downloads ();
+use Tie::File             ();
+use IPC::Run3             ();
+use Archive::Tar          ();
+use Archive::Zip          ();
+use LWP::UserAgent        ();
+use LWP::Online           ();
+use HTTP::Status          ();
+use URI::file             ();
+use YAML::Tiny            ();
 
-#--------------------------------------------------------------------------#
-# Constants
-#--------------------------------------------------------------------------#
+use CPAN                  ();
 
-use constant COMPRESSED => 1;
+
+
+
+
+#####################################################################
+# Constructor and Accessors
+
+sub new {
+    my $class  = shift;
+    my ($self) = YAML::Tiny::LoadFile( shift );
+    bless $self, $class;
+
+    # Auto-detect online-ness if needed
+    unless ( defined $self->{offline} ) {
+        $self->{offline} = LWP::Online::offline();
+    }
+
+    return $self;
+}
+
+sub binary {
+    $_[0]->{binary};
+}
+
+sub download_dir {
+    $_[0]->{download_dir};
+}
+
+sub image_dir {
+    $_[0]->{image_dir};
+}
+
+sub build_dir {
+    $_[0]->{build_dir};
+}
+
+sub binaries {
+    @{ $_[0]->{binary} };
+}
+
+sub modules {
+    @{ $_[0]->{modules} };
+}
+
+sub bin_perl {
+    $_[0]->{bin_perl} or die "perl is not ready";
+}
+
+sub bin_make {
+    $_[0]->{bin_make} or die "make is not ready";
+}
+
+
+
+
 
 #--------------------------------------------------------------------------#
 # API Functions
@@ -43,227 +102,168 @@ sub build_all {
     $self->install_modules;
     $self->install_extras;
     $self->install_from_cpan;
+    return 1;
 }
 
 sub install_binaries {
-    # Load configurations
-    my $cfg = shift;
-    my $binaries = $cfg->{binary}; # AOH
-    my $download_dir = $cfg->{download_dir};
-    my $image_dir = $cfg->{image_dir};
+    my $self = shift;
 
+    # Clear any existing directory
+    my $image_dir = $self->image_dir;
     if ( -d $image_dir ) {
-        say "Removing existing $image_dir";
-        rmtree( $image_dir );
+        $self->trace("Removing existing image_dir $image_dir\n");
+        File::Remove::remove( \1, $self->image_dir );
     }
 
-    say "Creating $image_dir";
-    _init_dir( $image_dir );
+    $self->trace("Creating $image_dir\n");
+    $self->_init_dir( $image_dir );
 
-    for my $d ( $download_dir, $image_dir ) {
-        -d $d or mkpath( $d ) 
-            or die "Couldn't create $d";
+    for my $d ( $self->download_dir, $image_dir ) {
+        next if -d $d;
+        File::Path::mkpath($d) or die "Couldn't create $d";
     }
 
-    for my $binary ( @$binaries ) {
+    for my $binary ( $self->binaries ) {
         my $name = $binary->{name};
-        say "Preparing $name";
-        
-        # downloading
-        my $tgz = _mirror_url( $binary->{url}, catdir( $download_dir, $name ) );
-        
-        # unpacking
+        $self->trace("Preparing $name\n");
+
+	# If a share, map to a URI
+	if ( $binary->{share} ) {
+		my ($dist, $name) = split /\s+/, $binary->{share};
+		$self->trace("Finding $name in $dist... ");
+		my $file = File::Spec->rel2abs(
+			File::ShareDir::dist_file( $dist, $name )
+		);
+		unless ( -f $file ) {
+			die "Failed to find $file";
+		}
+		$binary->{url} = URI::file->new($file)->as_string;
+		$self->trace(" found\n");
+	}
+
+        # Download the file
+        my $tgz = $self->_mirror(
+		$binary->{url},
+		File::Spec->catdir( $self->download_dir, $name ),
+	);
+
+        # Unpack the archive
         my $install_to = $binary->{install_to} || q{};
         if ( ref $install_to eq 'HASH' ) {
-            _extract_filemap( $tgz, $install_to, $image_dir );
-        }
-        elsif ( ! ref $install_to ) {
+            $self->_extract_filemap( $tgz, $install_to, $image_dir );
+
+        } elsif ( ! ref $install_to ) {
             # unpack as a whole
-            my $tgt = catdir( $image_dir, $install_to );
-            _extract_whole( $tgz => $tgt );
-        }
-        else {
+            my $tgt = File::Spec->catdir( $image_dir, $install_to );
+            $self->_extract_whole( $tgz => $tgt );
+
+        } else {
             die "didn't expect install_to to be a " . ref $install_to;
         }
         
-        # finding licenses
+        # Find the licenses
         if ( ref $binary->{license} eq 'HASH' )   {
-            my $license_dir = catdir( $image_dir, 'licenses' );
-            _extract_filemap( $tgz, $binary->{license}, $license_dir, 1 );
+            my $license_dir = File::Spec->catdir( $image_dir, 'licenses' );
+            $self->_extract_filemap( $tgz, $binary->{license}, $license_dir, 1 );
         }
         
-        # copy in any extras (e.g. CPAN\Config.pm starter)
+        # Copy in any extras (e.g. CPAN\Config.pm starter)
         if ( my $extras = $binary->{extra} ) {
-            for my $f ( keys %$extras ) {
-                my $from = $f;
-                my $to = catfile( $image_dir, $extras->{$f} );
-                my $basedir = dirname( $to );
-                mkpath( $basedir );
-                say "Copying $from to $to";
-                rcopy( $from, $to ) or die $!;
+            for my $from ( keys %$extras ) {
+                my $to   = File::Spec->catfile( $image_dir, $extras->{$from} );
+                $self->_copy( $from => $to );
             }
         }
     }
-}
 
-sub install_from_cpan {
-    # Load configurations
-    my $cfg = shift;
-    my $image_dir = $cfg->{image_dir};
-    my $cpan = $cfg->{cpan} or return; # AOH
-
-    # Check that we have our tools ready
-    my $dmake = catfile( $image_dir, qw/dmake bin dmake.exe/ );
-    my $perl =  catfile( $image_dir, qw/perl bin perl.exe/ );
-    die "Can't execute $dmake" unless -x $dmake;
-    die "Can't execute $perl" unless -x $perl;
-
-    # Get various cpan modules to include
-
-#    my @extras;
-    
-    for my $mod ( @$cpan ) {
-        my $name = $mod->{name};
-        my $force = $mod->{force} ? 1 : 0;
-#        push @extras, $mod->{extra} if defined $mod->{extra};
-        my $cpan_str = <<"ENDSTR";
-print( "-" x 70, "\n" );
-print "Preparing to install $name from CPAN\n";
-\$obj = CPAN::Shell->expandany( "$name" ) 
-    or die "CPAN.pm couldn't locate $name";
-if ( \$obj->uptodate ) {
-    print "$name is up to date\n";
-    exit
-}
-if ( $force ) {
-    \$obj->force("install");
-    $CPAN::DEBUG=1;
-    \$obj->uptodate or 
-        die "Forced installation of $name appears to have failed";
-}
-else {
-    \$obj->install;
-    \$obj->uptodate or 
-        die "Installation of $name appears to have failed";
-}
-ENDSTR
-        run3 [ $perl, "-MCPAN", "-e", $cpan_str ];
-        die "Failure detected installing $name, stopping" if $?;
-    
-        # copy in any extras (like config files)
-        if ( my $extras = $mod->{extra} ) {
-            for my $f ( keys %$extras ) {
-                my $from = $f;
-                my $to = catfile( $image_dir, $extras->{$f} );
-                my $basedir = dirname( $to );
-                mkpath( $basedir );
-                say "Copying $from to $to";
-                rcopy( $from, $to ) or die $!;
-            }
-        }
-            
+    # Initialize the image_dir binaries
+    $self->{bin_make} = File::Spec->catfile( $self->image_dir, 'dmake', 'bin', 'dmake.exe' );
+    unless ( -x $self->bin_make ) {
+        die "Can't execute make";
     }
 
+    return 1;
 }
 
 sub install_extras {
     # Load configurations
-    my $cfg = shift;
-    my $extras = $cfg->{extra}; # Hash
-    my $image_dir = $cfg->{image_dir};
+    my $self   = shift;
+    my $extras = $self->{extra}; # Hash
 
     # recursively copy in any extras (e.g. CPAN\Config.pm starter)
     if ( ref $extras eq 'HASH' ) {
         for my $f ( keys %$extras ) {
             my $from = $f;
-            my $to = catfile( $image_dir, $extras->{$f} );
-            my $basedir = dirname( $to );
-            mkpath( $basedir );
-            say "Copying $from to $to";
-            rcopy( $from, $to ) or die $!;
+            my $to   = File::Spec->catfile( $self->image_dir, $extras->{$f} );
+            $self->_copy($from => $to);
         }
     }
 }
 
 sub install_modules {
-    # Load configurations
-    my $cfg = shift;
-    my $download_dir = $cfg->{download_dir};
-    my $build_dir = $cfg->{build_dir};
-    my $image_dir = $cfg->{image_dir};
-    my $modules = $cfg->{modules}; # AOH
-
-    # Check that we have our tools ready
-    my $dmake = catfile( $image_dir, qw/dmake bin dmake.exe/ );
-    my $perl =  catfile( $image_dir, qw/perl bin perl.exe/ );
-    die "Can't execute $dmake" unless -x $dmake;
-    die "Can't execute $perl" unless -x $perl;
+    my $self = shift;
 
     # Setup a directory
-    my $module_dir = catdir( $download_dir, 'modules' );
+    my $module_dir = File::Spec->catdir( $self->download_dir, 'modules' );
 
     # Get various cpan modules to include
-
     my @build_queue;
     my %saw_dist;
-
     my $url_prefix = "http://mirrors.kernel.org/CPAN/authors/id/";
-
-    for my $mod ( @$modules ) {
+    for my $mod ( $self->modules ) {
         my $mod_type = $mod->{type} || 'Module';
         # figure out the dist for the module
         my $mod_info = CPAN::Shell->expandany( $mod->{name})
             or die "Couldn't expand ", $mod->{name};
         my $cpan_file = 
-            ref $mod_info eq 'CPAN::Module' ? $mod_info->cpan_file() :
-            ref $mod_info eq 'CPAN::Distribution' ? $mod_info->id() :
+            ref $mod_info eq 'CPAN::Module'       ? $mod_info->cpan_file :
+            ref $mod_info eq 'CPAN::Distribution' ? $mod_info->id :
             $mod->{name};
 
         next if $saw_dist{ $cpan_file }++;
 
         # download
-        my $tgz = _mirror_url( $url_prefix . $cpan_file, $module_dir );
+        my $tgz = $self->_mirror( $url_prefix . $cpan_file, $module_dir );
 
-        my $dist_name = basename( $cpan_file );
+        my $dist_name = File::Basename::basename( $cpan_file );
         (my $extract_dir = $dist_name) =~ s{\.tar\.gz\z|\.tgz\z|\.zip\z}{};
         my ($unpack_dir, $target);
 
         if ( exists $mod->{unpack_to} and ref $mod->{unpack_to} eq 'HASH') {
             # individual subdirs
-            say "Extracting individual files from $dist_name";
-            $unpack_dir = $target = $build_dir;
-            _extract_filemap( $tgz, $mod->{unpack_to}, $unpack_dir );
+            $self->trace("Extracting individual files from $dist_name\n");
+            $unpack_dir = $target = $self->build_dir;
+            $self->_extract_filemap( $tgz, $mod->{unpack_to}, $unpack_dir );
             push @build_queue, map { [$_, $mod ] } values %{ $mod->{unpack_to} }; 
         }
         else {
             # normal
             # queue the resulting destination
             $unpack_dir = defined $mod->{unpack_to}
-                        ? catdir( $build_dir, $mod->{unpack_to} )
-                        : $build_dir
+                        ? File::Spec->catdir( $self->build_dir, $mod->{unpack_to} )
+                        : $self->build_dir
                         ;
             my $queue_dir = defined $mod->{unpack_to}
-                          ? catdir( $mod->{unpack_to}, $extract_dir )
+                          ? File::Spec->catdir( $mod->{unpack_to}, $extract_dir )
                           : $extract_dir
                           ; 
-            $target = catdir( $unpack_dir, $extract_dir );
+            $target = File::Spec->catdir( $unpack_dir, $extract_dir );
             push @build_queue, [$queue_dir, $mod];
             # unpack the tarball
             if ( -d $target ) {
-                say "Removing previous $target";
-                rmtree $target;
+                $self->trace("Removing previous $target\n");
+                File::Remove::remove( \1, $target );
             }
         
-            _extract_whole( $tgz, $unpack_dir );
+            $self->_extract_whole( $tgz, $unpack_dir );
         }
         
         # copy in any extras (like config files)
         if ( my $extras = $mod->{extra} ) {
             for my $f ( keys %$extras ) {
-                my $from = catfile( $f );
-                my $to = catfile( $target, $extras->{$f} );
-                say "Copying $from to $to";
-                rcopy( $from, $to ) or die $!;
+                my $from = File::Spec->catfile( $f );
+                my $to   = File::Spec->catfile( $target, $extras->{$f} );
+                $self->_copy( $from => $to );
             }
         }
     }
@@ -272,97 +272,116 @@ sub install_modules {
 
     for my $dist ( @build_queue ) {
         my ($dir, $mod) = @$dist;
-        my $wd = pushd catdir( $build_dir, $dir );
-        
+        my $wd = File::pushd::pushd(
+		File::Spec->catdir( $self->build_dir, $dir ),
+	);
+
         warn "Needs better INSTALLDIRS handling!";
-        say "Building $dir";
-        run3 [ $perl, qw/Makefile.PL INSTALLDIRS=site/ ];
-        -r catfile( $wd, 'Makefile' ) 
-            or die "Problem running $dir Makefile.PL";
-        run3 [ $dmake ];
-        die "Problem making $dir" if ( $? >> 8 );
-        run3 [ $dmake, qw/test/ ];
-        if ( $? >> 8 and ! $mod->{force} ) {
-            say "Problem testing $dir.  Continue (y/N)?";
-            my $answer = <>;
-            exit 1 if $answer !~ /\Ay/i;
+        $self->trace("Building $dir\n");
+        SCOPE: {
+            local $ENV{PERL_MM_USE_DEFAULT} = 1;
+            IPC::Run3::run3 [ $self->bin_perl, qw/
+                Makefile.PL
+                INSTALLDIRS=site
+                INSTALLMAN1DIR=none
+                INSTALLMAN3DIR=none
+                INSTALLSITEMAN1DIR=none
+                INSTALLSITEMAN3DIR=none
+                INSTALLVENDORMAN1DIR=none
+                INSTALLVENDORMAN3DIR=none
+            / ];
+            -r File::Spec->catfile( $wd, 'Makefile' ) 
+                or die "Problem running $dir Makefile.PL";
+            $self->_make;
+            IPC::Run3::run3 [ $self->bin_make, qw/test/ ];
+            if ( $? >> 8 and ! $mod->{force} ) {
+                $self->trace("Problem testing $dir.  Continue (y/N)?\n");
+                my $answer = <>;
+                exit 1 if $answer !~ /\Ay/i;
+            }
+            $self->_make( qw/install UNINST=1/ );
         }
-        run3 [ $dmake, qw/install UNINST=1/ ];
-        die "Problem installing $dir" if ( $? >> 8 );
     }
 }
 
 sub install_perl {
     # Load configurations
-    my $cfg = shift;
-    my $sources = $cfg->{source}; # AOH
-    my $download_dir = $cfg->{download_dir};
-    my $build_dir = $cfg->{build_dir};
-    my $image_dir = $cfg->{image_dir};
-
-    # Make sure we have dmake in the right place
-    my $dmake = catfile( $image_dir, qw/dmake bin dmake.exe/ );
-    die "Can't execute $dmake" unless -x $dmake;
+    my $self    = shift;
+    my $sources = $self->{source}; # AOH
 
     # Setup directory
-    _init_dir( $image_dir );
+    $self->_init_dir( $self->image_dir );
 
     # download perl
-    say "Building perl:";
+    $self->trace("Building perl:\n");
 
-    my $perl_cfg = $sources->[0]; # perl is the only one so far
+    # perl is the only one so far
+    my $perl_cfg = $sources->[0];
 
-    my $tgz = _mirror_url( 
-        $perl_cfg->{url},
-        catdir( $download_dir, $perl_cfg->{name} ) 
-    );
-
-    my $unpack_to = catdir( $build_dir, ( $perl_cfg->{unpack_to} || q{} ) );
-
-    if ( -d $unpack_to ) {
-        say "Removing previous $unpack_to";
-        rmtree( $unpack_to );
+    # If a share, map to a URI
+    if ( $perl_cfg->{share} ) {
+        my ($dist, $name) = split /\s+/, $perl_cfg->{share};
+        $self->trace("Finding $name in $dist... ");
+        my $file = File::Spec->rel2abs(
+            File::ShareDir::dist_file( $dist, $name )
+        );
+        unless ( -f $file ) {
+            die "Failed to find $file";
+        }
+        $perl_cfg->{url} = URI::file->new($file)->as_string;
+        $self->trace(" found\n");
     }
 
-    _extract_whole( $tgz => $unpack_to );
+    # Download the file
+    my $tgz = $self->_mirror( 
+        $perl_cfg->{url},
+        File::Spec->catdir( $self->download_dir, $perl_cfg->{name} ) 
+    );
+
+    my $unpack_to = File::Spec->catdir( $self->build_dir, ( $perl_cfg->{unpack_to} || q{} ) );
+    if ( -d $unpack_to ) {
+        $self->trace("Removing previous $unpack_to\n");
+        File::Remove::remove( \1, $unpack_to );
+    }
+
+    $self->_extract_whole( $tgz => $unpack_to );
 
     # Get the versioned name of the directory
     (my $perlsrc = $tgz) =~ s{\.tar\.gz\z|\.tgz\z}{};
-    $perlsrc = basename($perlsrc);
+    $perlsrc = File::Basename::basename($perlsrc);
 
     # Manually patch in the Win32 friendly ExtUtils::Install
     for my $f ( qw/Install.pm Installed.pm Packlist.pm/ ) {
-        my $from = catfile( "extra", $f );
-        my $to = catfile( $unpack_to, $perlsrc, qw/lib ExtUtils/, $f );
-        say "Copying $from to $to";
-        rcopy( $from, $to ) or die $!;
+        my $from = File::Spec->catfile( "extra", $f );
+        my $to   = File::Spec->catfile( $unpack_to, $perlsrc, qw/lib ExtUtils/, $f );
+        $self->_copy( $from => $to );
     }
 
     # finding licenses
     if ( ref $perl_cfg->{license} eq 'HASH' )   {
-        my $license_dir = catdir( $image_dir, 'licenses' );
-        _extract_filemap( $tgz, $perl_cfg->{license}, $license_dir, 1 );
+        my $license_dir = File::Spec->catdir( $self->image_dir, 'licenses' );
+        $self->_extract_filemap( $tgz, $perl_cfg->{license}, $license_dir, 1 );
     }
         
     # Setup fresh install directory
-    my $perl_install = catdir( $image_dir, $perl_cfg->{install_to} );
+    my $perl_install = File::Spec->catdir( $self->image_dir, $perl_cfg->{install_to} );
 
     if ( -d $perl_install ) {
-        say "Removing previous $perl_install";
-        rmtree( $perl_install );
+        $self->trace("Removing previous $perl_install\n");
+        File::Remove::remove( \1, $perl_install );
     }
 
     # Build win32 perl
-    {
-        my $wd = pushd catdir( $unpack_to, $perlsrc , "win32" );
+    SCOPE: {
+        my $wd = File::pushd::pushd(
+		File::Spec->catdir( $unpack_to, $perlsrc , "win32" ),
+	);
 
+	my $image_dir             = $self->image_dir;
+        my (undef,$short_install) = File::Spec->splitpath( $perl_install, 1 );
+        $self->trace("Patching makefile.mk\n");
         tie my @makefile, 'Tie::File', 'makefile.mk'
             or die "Couldn't read makefile.mk";
-
-        say "Patching makefile.mk";
-
-        my (undef,$short_install) = splitpath( $perl_install, 1 );
-
         for (@makefile) {
             if ( m{\AINST_TOP\s+\*=\s+} ) {
                 s{\\perl}{$short_install}; # short has the leading \
@@ -374,52 +393,92 @@ sub install_perl {
                 next;
             }
         }
-
         untie @makefile;
 
-        say "Building perl with $dmake";
-        run3 [ $dmake ] or die "Problem building perl, stopping";
+        $self->trace("Building perl...\n");
+	$self->_make;
 
         # XXX Ugh -- tests take too long right now
-        #say "Testing perl build";
-        #run3 [ $dmake, "test" ] or die "Problem testing perl, stopping";
+        # $self->trace("Testing perl build\n");
+        # $self->_make('test');
 
-        say "Installing perl to $build_dir\\perl";
-        run3 [ $dmake, "install" ] or die "Problem installing perl, stopping";
+        $self->trace("Installing perl...\n");
+        $self->_make( qw/install UNINST=1/ );
     }
 
-    # copy in any extras (e.g. CPAN\Config.pm starter)
+    # Copy in any extras (e.g. CPAN\Config.pm starter)
     if ( my $extras = $perl_cfg->{after} ) {
         for my $f ( keys %$extras ) {
-            my $from = catfile( $f );
-            my $to = catfile( $perl_install, $extras->{$f} );
-            say "Copying $from to $to";
-            rcopy( $from, $to ) or die $!;
+            my $from = File::Spec->catfile( $f );
+            my $to   = File::Spec->catfile( $perl_install, $extras->{$f} );
+            $self->_copy( $from => $to );
         }
     }
 
     # Should now have a perl to use
-    my $perl = catfile( $image_dir, qw/perl bin perl.exe/ );
-    die "Can't execute $perl" unless -x $perl;
+    $self->{bin_perl} = File::Spec->catfile( $self->image_dir, qw/perl bin perl.exe/ );
+    unless ( -x $self->bin_perl ) {
+        die "Can't execute " . $self->bin_perl;
+    }
 
-    say "Perl build ok!";
+    $self->trace("Perl build completed ok\n");
 }
 
-sub new {
-    my ($class, $yaml) = @_;
-    my $self = YAML::LoadFile( $yaml );
-    bless $self, $class;
+sub install_from_cpan {
+    # Load configurations
+    my $self = shift;
+    my $cpan = $self->{cpan} or return; # AOH
+
+    # Get various cpan modules to include
+    for my $mod ( @$cpan ) {
+        my $name     = $mod->{name};
+        my $force    = $mod->{force} ? 1 : 0;
+        my $cpan_str = <<"END_PERL";
+print( "-" x 70, "\n" );
+print "Preparing to install $name from CPAN\n";
+\$obj = CPAN::Shell->expandany( "$name" ) 
+    or die "CPAN.pm couldn't locate $name";
+if ( \$obj->uptodate ) {
+    print "$name is up to date\n";
+    exit
+}
+if ( $force ) {
+    local \$ENV{PERL_MM_USE_DEFAULT} = 1;
+    \$obj->force("install");
+    \$CPAN::DEBUG=1;
+    \$obj->uptodate or 
+        die "Forced installation of $name appears to have failed";
+}
+else {
+    local \$ENV{PERL_MM_USE_DEFAULT} = 1;
+    \$obj->install;
+    \$obj->uptodate or 
+        die "Installation of $name appears to have failed";
+}
+END_PERL
+        IPC::Run3::run3 [ $self->bin_perl, "-MCPAN", "-e", $cpan_str ];
+        die "Failure detected installing $name, stopping" if $?;
+
+        # copy in any extras (like config files)
+        if ( my $extras = $mod->{extra} ) {
+            for my $f ( keys %$extras ) {
+                my $from = $f;
+                my $to   = File::Spec->catfile( $self->image_dir, $extras->{$f} );
+                $self->_copy( $from => $to );
+            }
+        }
+    }
 }
 
 sub remove_image {
-    my $self = shift;
+    my $self  = shift;
     my $image = $self->{image_dir};
     if ( -d $image ) {
-        say "Removing previous $image";
-        rmtree( $image );
+        $self->trace("Removing previous $image\n");
+        File::Remove::remove( \1, $image );
     }
     else {
-        say "No previous $image found";
+        $self->trace("No previous $image found\n");
     }
     return;
 }
@@ -429,14 +488,14 @@ sub remove_image {
 #--------------------------------------------------------------------------#
 
 sub _extract_filemap {
-    my ( $archive, $filemap, $basedir, $file_only ) = @_;
+    my ( $self, $archive, $filemap, $basedir, $file_only ) = @_;
 
     if ( $archive =~ m{\.zip\z} ) {
         my $zip = Archive::Zip->new( $archive );
-        my $wd = pushd $basedir;
+        my $wd = File::pushd::pushd( $basedir );
         while ( my ($f, $t) = each %$filemap ) {
-            say "Extracting $f to $t";
-            my $dest = catfile( $basedir, $t );
+            $self->trace("Extracting $f to $t\n");
+            my $dest = File::Spec->catfile( $basedir, $t );
             $zip->extractTree( $f, $dest );
         }
     }
@@ -460,8 +519,8 @@ sub _extract_filemap {
                     ($t = $canon_f)   =~ s{\A([^/]+[/])?\Q$canon_tgt\E}
                                              {$filemap->{$tgt}}i;
                 }
-                my $full_t = catfile( $basedir, $t );
-                say "Extracting $f to $full_t";
+                my $full_t = File::Spec->catfile( $basedir, $t );
+                $self->trace("Extracting $f to $full_t\n");
                 $tar->extract_file( $f, $full_t );
             }
         }
@@ -473,21 +532,20 @@ sub _extract_filemap {
 }
 
 sub _extract_whole {
-    my ( $from, $to ) = @_;
-    mkpath( $to );
-    my $wd = pushd $to;
-
+    my ( $self, $from, $to ) = @_;
+    File::Path::mkpath($to);
+    my $wd = File::pushd::pushd( $to );
     $|++;
-    print "Extracting $from...";
+    $self->trace("Extracting $from...");
     if ( $from =~ m{\.zip\z} ) {
         my $zip = Archive::Zip->new( $from );
         $zip->extractTree();
-        say "done"
+        $self->trace("done\n");
     }
     elsif ( $from =~ m{\.tar\.gz|\.tgz} ) {
         local $Archive::Tar::CHMOD = 0;
-        Archive::Tar->extract_archive($from, COMPRESSED);
-        say "done"
+        Archive::Tar->extract_archive($from, 1);
+        $self->trace("done\n");
     }
     else {
         die "Didn't recognize archive type for $from";
@@ -496,37 +554,63 @@ sub _extract_whole {
 }
 
 sub _init_dir {
-    my ($image_dir) = @_;
-
-    mkpath $image_dir;
-
+    my $self = shift;
+    my $dir  = shift;
+    File::Path::mkpath($dir);
     for my $d ( qw/dmake mingw licenses links perl/ ) {
-        mkpath catdir( $image_dir, $d );
+        File::Path::mkpath(File::Spec->catdir( $dir, $d ));
     }
+    return 1;
 }
 
-sub _mirror_url {
-    my $ua = LWP::UserAgent->new();
-    my ( $url, $dir ) = @_;
+sub _mirror {
+    my ($self, $url, $dir) = @_;
     my ($file) = $url =~ m{/([^/?]+\.(?:tar\.gz|tgz|zip))}ims;
-    mkpath( $dir );
-    my $target = catfile( $dir, $file );
-    $|++;
-    print "Downloading $file...";
-    my $r = $ua->mirror( $url, $target );
-    if ( $r->is_error() ) {
-        say "    Error getting $url:\n", $r->as_string;
+    my $target = File::Spec->catfile( $dir, $file );
+    if ( $self->{offline} and -f $target ) {
+        $self->trace(" already downloaded\n");
+        return $target;
     }
-    elsif ( $r->code == RC_NOT_MODIFIED ) {
-        say " already up to date.";
+    File::Path::mkpath($dir);
+    $| = 1;
+    $self->trace("Downloading $file...");
+    my $ua = LWP::UserAgent->new;
+    my $r  = $ua->mirror( $url, $target );
+    if ( $r->is_error ) {
+        $self->trace("    Error getting $url:\n" . $r->as_string . "\n");
+    }
+    elsif ( $r->code == HTTP::Status::RC_NOT_MODIFIED ) {
+        $self->trace(" already up to date.\n");
     }
     else {
-        say " done";
+        $self->trace(" done\n");
     }
     return $target;
 }
 
-1; # modules must return true
+sub _copy {
+    my ($self, $from, $to) = @_;
+    my $basedir = File::Basename::dirname( $to );
+    File::Path::mkpath($basedir) unless -e $basedir;
+    $self->trace("Copying $from to $to\n");
+    File::Copy::Recursive::rcopy( $from, $to ) or die $!;
+}
+
+sub _make {
+	my $self   = shift;
+	my @params = @_;
+	$self->trace(join(' ', '>', $self->bin_make, @params) . "\n");
+	IPC::Run3::run3( [ $self->bin_make, @params ] ) or die "make failed";
+	die "make failed (OS error)" if ( $? >> 8 );
+	return 1;
+}
+
+sub trace {
+        my $self = shift;
+	print $_[0];
+}
+
+1;
 
 __END__
 
