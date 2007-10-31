@@ -1,6 +1,10 @@
 --- 
 abstract: Perl Distribution Creation Toolkit
-author: David A Golden <dagolden@cpan.org>
+author: Adam Kennedy <adamk@cpan.org>
+build_requires: 
+  ExtUtils::MakeMaker: 6.11
+  Test::More: 0.42
+  Test::Script: 1.02
 distribution_type: module
 generated_by: Module::Install version 0.65
 license: perl
@@ -25,10 +29,10 @@ requires:
   File::pushd: 0.32
   HTTP::Status: 1.28
   IPC::Run3: 0.034
-  LWP::Online: 0.02
+  LWP::Online: 0.03
   LWP::UserAgent: 2.033
   Perl::Dist::Downloads: 0.02
   Tie::File: 0
   YAML::Tiny: 1.12
   perl: 5.005
-version: 0.06
+version: 0.29_01
