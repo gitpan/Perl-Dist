@@ -37,4 +37,4 @@ requires:
   Tie::File: 0
   YAML::Tiny: 1.12
   perl: 5.005
-version: 0.30
+version: 0.31

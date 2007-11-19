@@ -49,7 +49,6 @@ t/11_dist_run.t
 t/12_perl_5100.t
 t/98_pod.t
 t/99_pmv.t
-t/data/cpan/authors/id/A/AD/ADAMK/Config-Tiny-2.10.tar.gz
 t/lib/Test.pm
 t/lib/Test1.pm
 t/lib/Test2.pm

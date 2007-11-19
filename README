@@ -2,6 +2,8 @@ NAME
     Perl::Dist - Perl Distribution Creation Toolkit
 
 DESCRIPTION
+    THIS DOCUMENTATION IS CURRENTLY OUT OF DATE
+
     The Perl::Dist namespace encompasses creation of pre-packaged, binary
     distributions of Perl, such as executable installers for Win32. While
     initial efforts are targeted at Win32, there is hope that this may
@@ -19,11 +21,6 @@ DESCRIPTION
 
     Please note that this module is currently considered experimental, and
     not really suitable for general use.
-
-  BUILDERS
-    There is currently only the default builder:
-
-    *   Perl::Dist::Builder -- an alpha version of a distribution builder
 
   DISTRIBUTIONS
     Currently available distributions include:
@@ -43,13 +40,15 @@ ROADMAP
 
     *   Bug-squashing Win32 compatibility problems in popular modules
 
-    *   Refactoring the initial builder for greater modularity and control
-        of the build process
+    *   Customisable installation path.
 
-    *   Support for Win32 *.msi installation files instead of standalone
-        *.exe installers
+    *   Support installation paths with spaces and other weird characters.
 
-    *   Better uninstall support and upgradability
+    *   Restore support for .exe installation instead of .zip.
+
+    *   Support for Win32 *.msi installation instead of *.exe.
+
+    *   Better uninstall support and upgradability.
 
 AUTHOR
     Adam Kennedy <adamk@cpan.org>
@@ -57,9 +56,9 @@ AUTHOR
     David A. Golden <dagolden@cpan.org>
 
 COPYRIGHT
-    Cyopright 2007 Adam Kennedy
+    Cyopright 2007 Adam Kennedy.
 
-    Copyright 2006 David A. Golden
+    Copyright 2006 David A. Golden.
 
     This program is free software; you can redistribute it and/or modify it
     under the same terms as Perl itself.
@@ -68,19 +67,7 @@ COPYRIGHT
     with this module.
 
 SEE ALSO
-    *   Perl::Dist::Builder
-
-    *   Perl::Dist::Vanilla
-
-    *   Perl::Dist::Strawberry
-
-    *   <http://win32.perl.org/>
-
-    *   <http://vanillaperl.com/>
-
-    *   <irc://irc.perl.org/#win32>
-
-    *   <http://ali.as/>
-
-    *   <http://dagolden.com/>
+    Perl::Dist, Perl::Dist::Vanilla, Perl::Dist::Strawberry,
+    <http://win32.perl.org/>, <http://vanillaperl.com/>,
+    <irc://irc.perl.org/#win32>, <http://ali.as/>, <http://dagolden.com/>
 
