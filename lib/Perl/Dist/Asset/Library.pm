@@ -1,6 +1,6 @@
-package Perl::Dist::Asset::Perl;
+package Perl::Dist::Asset::Library;
 
-# Perl::Dist asset for the Perl source code itself
+# Perl::Dist asset for a Library
 
 use strict;
 use Carp         'croak';
@@ -14,11 +14,10 @@ BEGIN {
 
 use Object::Tiny qw{
 	name
-	force
 	license
 	unpack_to
+	build_a
 	install_to
-	patch
 };
 
 
@@ -38,19 +37,18 @@ sub new {
 	unless ( _STRING($self->name) ) {
 		croak("Missing or invalid name param");
 	}
-	unless ( _HASH($self->license) ) {
+	unless ( ! defined $self->license or _HASH($self->license) ) {
 		croak("Missing or invalid license param");
 	}
 	unless ( defined $self->unpack_to and ! ref $self->unpack_to ) {
 		croak("Missing or invalid unpack_to param");
 	}
-	unless ( _STRING($self->install_to) ) {
+	unless ( _STRING($self->install_to) or _HASH($self->install_to) ) {
 		croak("Missing or invalid install_to param");
 	}
-	if ( $self->patch and ! _HASH($self->patch) ) {
-		croak("Invalid patch param");
+	unless ( _HASH($self->build_a) ) {
+		croak("Missing or invalid build_a param");
 	}
-	$self->{force} = !! $self->force;
 
 	return $self;
 }

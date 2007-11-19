@@ -32,8 +32,9 @@ requires:
   IPC::Run3: 0.034
   LWP::Online: 0.03
   LWP::UserAgent: 2.033
-  Perl::Dist::Downloads: 0.02
+  Object::Tiny: 1.02
+  Perl::Dist::Downloads: 0.05
   Tie::File: 0
   YAML::Tiny: 1.12
   perl: 5.005
-version: 0.29_02
+version: 0.30

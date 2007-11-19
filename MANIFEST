@@ -14,6 +14,7 @@ lib/Perl/Dist/Asset.pm
 lib/Perl/Dist/Asset/Binary.pm
 lib/Perl/Dist/Asset/Distribution.pm
 lib/Perl/Dist/Asset/File.pm
+lib/Perl/Dist/Asset/Library.pm
 lib/Perl/Dist/Asset/Module.pm
 lib/Perl/Dist/Asset/Perl.pm
 lib/Perl/Dist/Builder.pm
@@ -42,12 +43,14 @@ t/04_inno_icon.t
 t/05_inno_registry.t
 t/06_inno.t
 t/07_asset_file.t
+t/08_asset_module.t
 t/10_dist_new.t
 t/11_dist_run.t
+t/12_perl_5100.t
 t/98_pod.t
 t/99_pmv.t
-t/data/cpan/id/authors/A/AD/ADAMK/Config-Tiny-2.10.tar.gz
-t/data/vanilla.yml
+t/data/cpan/authors/id/A/AD/ADAMK/Config-Tiny-2.10.tar.gz
 t/lib/Test.pm
 t/lib/Test1.pm
 t/lib/Test2.pm
+t/lib/Test3.pm

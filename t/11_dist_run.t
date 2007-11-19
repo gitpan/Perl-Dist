@@ -13,7 +13,11 @@ BEGIN {
 		plan( skip_all => 'Not on Win32' );
 		exit(0);
 	};
-	plan( tests => 10 );
+	unless ( $ENV{TEST_PERLDIST_ALL} ) {
+		plan( skip_all => 'Skipping multi-hour tests to avoid breaking CPAN Testers' );
+		exit(0);
+	}
+	plan( tests => 11 );
 }
 
 use File::Path ();
@@ -27,3 +31,6 @@ isa_ok( $dist, 't::lib::Test2' );
 # Run the dist object, and ensure everything we expect was created
 diag( "Building test dist, may take up to an hour... (sorry)" );
 ok( $dist->run, '->run ok' );
+ok( -f "C:\\tmp\\sp\\image\\c\\bin\\dmake.exe", 'Found dmake.exe' );
+ok( -f "C:\\tmp\\sp\\image\\c\\bin\\startup\\Makefile.in", 'Found startup' );
+ok( -f "C:\\tmp\\sp\\image\\c\\bin\\pexports.exe", 'Found pexports' );
