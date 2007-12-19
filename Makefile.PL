@@ -22,8 +22,13 @@ requires       'Tie::File'             => 0;
 requires       'YAML::Tiny'            => '1.12';
 requires       'CPAN'                  => 0;
 requires       'Perl::Dist::Downloads' => '0.05';
+requires       'Process'               => '0.20';
+requires       'Process::Storable'     => 0;
+requires       'Process::Delegatable'  => 0;
+requires       'IO::Capture'           => '0.05';
 build_requires 'Test::More'            => '0.42';
 build_requires 'Test::Script'          => '1.02';
+build_requires 'Test::LongString'      => 0;
 install_script 'script/perldist';
 install_share;
 

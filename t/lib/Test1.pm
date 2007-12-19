@@ -1,11 +1,11 @@
 package t::lib::Test1;
 
 use strict;
-use base 'Perl::Dist';
+use base 'Perl::Dist::Inno';
 
 use vars qw{$VERSION};
 BEGIN {
-	$VERSION = '0.31';
+	$VERSION = '0.50';
 }
 
 
