@@ -16,6 +16,7 @@ meta-spec:
 name: Perl-Dist
 no_index: 
   directory: 
+    - share
     - inc
     - t
 requires: 
@@ -42,4 +43,4 @@ requires:
   Tie::File: 0
   YAML::Tiny: 1.12
   perl: 5.6.0
-version: 0.50
+version: 0.51
