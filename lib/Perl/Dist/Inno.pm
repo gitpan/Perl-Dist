@@ -1,5 +1,133 @@
 package Perl::Dist::Inno;
 
+=pod
+
+=head1 NAME
+
+Perl::Dist::Inno - Inno Setup Builder for Win32 Perl Distributions
+
+=head1 SYNOPSIS
+
+Creating a custom distribution
+
+  package My::Perl::Dist;
+  
+  use strict;
+  use base 'Perl::Dist::Strawberry';
+  
+  
+  1;
+
+Building that distribution...
+
+  > perldist My::Perl::Dist "file://c|/minicpan/"
+
+=head1 DESCRIPTION
+
+B<ATTENTION: THE API OF THIS MODULES IS BEING HEAVILY REFACTORED.>
+
+B<SUBCLASSING IS ENCOURAGED BUT MAY NEED TO BE CHANGED WITH FUTURE RELEASES.>
+
+B<YOU HAVE BEEN WARNED!>
+
+B<Perl::Dist::Inno> is a Win32 Perl distribution builder that targets
+the Inno Setup 5 installer creation program.
+
+It provides a rich set of functionality that allows a distribution
+developer to specify either Perl 5.8.8 or Perl 5.10.0, specify
+additional C libraries and CPAN modules to be installed, and then
+set start menu entries to websites and programs as needed.
+
+A distribution directory and a matching .iss script is
+generated, which is then handed off to Inno Setup 5 to create the
+final distribution .exe installer.
+
+Alternatively, B<Perl::Dist::Inno> can generate a .zip file for
+the distribution without the installer.
+
+Because the API for Perl::Dist::Inno is extremely rich and fairly
+complex (and a moving target) the documentation is unfortunately
+a bit less complete than it should be.
+
+As parts of the API solidify I hope to document them better.
+
+=head2 API Structure
+
+The L<Perl::Dist::Inno> API is separated into 2 layers, and a series
+of objects.
+
+L<Perl::Dist::Inno::Script> provides the direct mapping to the Inno
+Setup 5 .iss script, and has no logical understand of Perl Distribution.
+
+It stores the values that will ultimately be written into the .iss
+files as attributes, and contains a series of collections of
+L<Perl::Dist::Inno::File>, L<Perl::Dist::Inno::Registry> and
+L>Perl::Dist::Inno::Icon> objects, which map directly to entries
+in the .iss script's [Files], [Icons] and [Registry] sections.
+
+To the extent that it does interact with actual distributions, it is
+only to the extent of validating some directories exist, and
+triggering the actual execution of the Inno Setup 5 compiler.
+
+B<Perl::Dist::Inno> (this class) is a sub-class of
+L<Perl::Dist::Inno::Script> and represents the layer at which
+the understanding of the Perl distribution itself is implemented.
+
+L<Perl::Dist::Asset> and its various subclasses provides the internal
+representation of the logical elements of a Perl distribution.
+
+These assets are mostly transient and are destroyed once the asset
+has been added to the distribution (this may change).
+
+In the process of adding the asset to the distribution, various
+files may be created and objects added to the script object that
+will result in .iss keys being created where the installer builder
+needs to know about that asset explicitly.
+
+L<Perl::Dist::Inno> itself provides both many levels of abstraction
+with sensible default implementations of high level concept methods,
+as well as multiple levels of submethods.
+
+Strong separation of concerns in this manner allows people creating
+distribution sub-classes to add hooks to the build process in many
+places, for maximum customisability.
+
+The main Perl::Dist::Inno B<run> method implements the basic flow
+for the creation of a Perl distribution. The order is rougly as
+follows:
+
+=over 4
+
+=item 1. Install a C toolchain
+
+=item 2. Install additional C libraries
+
+=item 3. Install Perl itself
+
+=item 4. Install/Upgrade the CPAN toolchain
+
+=item 5. Install additional CPAN modules
+
+=item 6. Install Win32 "extras" such as start menu entries
+
+=item 7. Remove any files we don't need in the final distribution
+
+=item 8. Generate the zip or exe files as needed.
+
+=back
+
+=head2 Creating Your Own Distribution
+
+Rather than building directly on top of Perl::Dist::Inno, it is probably
+better to build on top of a particular distribution, probably Strawberry.
+
+For more information, see the L<Perl::Dist::Strawberry> documentation
+which details how to sub-class the distribution.
+
+=head1 METHODS
+
+=cut
+
 use 5.005;
 use strict;
 use Carp                  'croak';
@@ -19,13 +147,14 @@ use Params::Util          qw{ _STRING _HASH _INSTANCE };
 use HTTP::Status          ();
 use LWP::UserAgent        ();
 use LWP::Online           ();
+use Module::CoreList      ();
 use Tie::File             ();
 
 use base 'Perl::Dist::Inno::Script';
 
 use vars qw{$VERSION};
 BEGIN {
-        $VERSION = '0.51';
+        $VERSION = '0.90_01';
 }
 
 use Object::Tiny qw{
@@ -36,8 +165,11 @@ use Object::Tiny qw{
 	license_dir
 	build_dir
 	iss_file
-	remove_image
 	user_agent
+	perl_version
+	perl_version_literal
+	perl_version_human
+	perl_version_corelist
 	cpan
 	bin_perl
 	bin_make
@@ -48,6 +180,7 @@ use Object::Tiny qw{
 	env_include
 	debug_stdout
 	debug_stderr
+	output_file
 };
 
 use Perl::Dist::Inno                ();
@@ -58,6 +191,8 @@ use Perl::Dist::Asset::Perl         ();
 use Perl::Dist::Asset::Distribution ();
 use Perl::Dist::Asset::Module       ();
 use Perl::Dist::Asset::File         ();
+use Perl::Dist::Asset::Website      ();
+use Perl::Dist::Asset::Launcher     ();
 use Perl::Dist::Util::Toolchain     ();
 
 
@@ -67,6 +202,82 @@ use Perl::Dist::Util::Toolchain     ();
 #####################################################################
 # Constructor
 
+=pod
+
+=head2 new
+
+The B<new> method creates a new Perl Distribution build as an object.
+
+Each object is used to create a single distribution, and then should be
+discarded.
+
+Although there are about 30 potential constructor arguments that can be
+provided, most of them are automatically resolved and exist for overloading
+puposes only, or they revert to sensible default and generally never need
+to be modified.
+
+The following is an example of the most likely attributes that will be
+specified.
+
+  my $build = Perl::Dist::Inno->new(
+      image_dir => 'C:\vanilla',
+      temp_dir  => 'C:\tmp\vp',
+      cpan      => 'file://C|/minicpan/',
+  );
+
+=over 4
+
+=item image_dir
+
+Perl::Dist::Inno distributions can only be installed to fixed paths.
+
+To facilitate a correctly working CPAN setup, the files that will
+ultimately end up in the installer must also be assembled under the
+same path on the author's machine.
+
+The C<image_dir> method specifies the location of the Perl install,
+both on the author's and end-user's host.
+
+Please note that this directory will be automatically deleted if it
+already exists at object creation time. Trying to build a Perl
+distribution on the SAME distribution can thus have devestating
+results.
+
+=item temp_dir
+
+B<Perl::Dist::Inno> needs a series of temporary directories while
+it is running the build, including places to cache downloaded files,
+somewhere to expand tarballs to build things, and somewhere to put
+debugging output and the final installer zip and exe files.
+
+The C<temp_dir> param specifies the root path for where these
+temporary directories should be created.
+
+For convenience it is best to make these short paths with simple
+names, near the root.
+
+=item cpan
+
+The C<cpan> param provides a path to a CPAN or minicpan mirror that
+the installer can use to fetch any needed files during the build
+process.
+
+The param should be a L<URI> object to the root of the CPAN repository,
+including trailing newline.
+
+If you are online and no C<cpan> param is provided, the value will
+default to the L<http://cpan.strawberryperl.com> repository as a
+convenience.
+
+=back
+
+The C<new> constructor returns a B<Perl::Dist> object, which you
+should then call C<run> on to generate the distribution.
+
+TO BE CONTINUED
+
+=cut
+
 sub new {
 	my $class  = shift;
 	my %params = @_;
@@ -75,40 +286,68 @@ sub new {
 	if ( defined $params{image_dir} and ! defined $params{default_dir_name} ) {
 		$params{default_dir_name} = $params{image_dir};
 	}
-	if ( defined $params{temp_dir} ) {
-		unless ( defined $params{download_dir} ) {
-			$params{download_dir} = File::Spec->catdir(
-				$params{temp_dir}, 'download',
-			);
-			File::Path::mkpath($params{download_dir});
+	unless ( defined $params{temp_dir} ) {
+		$params{temp_dir} = File::Spec->catdir(
+			File::Spec->tmpdir, 'perldist',
+		);
+	}
+	unless ( defined $params{download_dir} ) {
+		$params{download_dir} = File::Spec->catdir(
+			$params{temp_dir}, 'download',
+		);
+		File::Path::mkpath($params{download_dir});
+	}
+	unless ( defined $params{build_dir} ) {
+		$params{build_dir} = File::Spec->catdir(
+			$params{temp_dir}, 'build',
+		);
+		if ( -d $params{build_dir} ) {
+			File::Remove::remove( \1, $params{build_dir} );
 		}
-		unless ( defined $params{build_dir} ) {
-			$params{build_dir} = File::Spec->catdir(
-				$params{temp_dir}, 'build',
-			);
-			if ( -d $params{build_dir} ) {
-				File::Remove::remove( \1, $params{build_dir} );
-			}
-			File::Path::mkpath($params{build_dir});
+		File::Path::mkpath($params{build_dir});
+	}
+	unless ( defined $params{output_dir} ) {
+		$params{output_dir} = File::Spec->catdir(
+			$params{temp_dir}, 'output',
+		);
+		if ( -d $params{output_dir} ) {
+			File::Remove::remove( \1, $params{output_dir} );
 		}
-		unless ( defined $params{output_dir} ) {
-			$params{output_dir} = File::Spec->catdir(
-				$params{temp_dir}, 'output',
-			);
-			if ( -d $params{output_dir} ) {
-				File::Remove::remove( \1, $params{output_dir} );
-			}
-			File::Path::mkpath($params{output_dir});
+		File::Path::mkpath($params{output_dir});
+	}
+	if ( defined $params{image_dir} ) {
+		if ( -d $params{image_dir} ) {
+			File::Remove::remove( \1, $params{image_dir} );
 		}
+		File::Path::mkpath($params{image_dir});
 	}
 
 	# Hand off to the parent class
 	my $self = $class->SUPER::new(%params);
 
-        # Apply more defaults
-	unless ( defined $self->remove_image ) {
-		$self->{remove_image} = 1;
+	# Check the version of Perl to build
+	unless ( defined $self->perl_version ) {
+		$self->{perl_version} = '5100';
 	}
+	unless ( $self->can('install_perl_' . $self->perl_version) ) {
+		croak("Perl::Dist does not support Perl " . $self->perl_version);
+	}
+	$self->{perl_version_literal} = {
+		588  => '5.008008',
+		5100 => '5.010000',
+		}->{$self->perl_version}
+	or die "Failed to resolve perl_version_literal";
+	$self->{perl_version_human} = {
+		588  => '5.8.8',
+		5100 => '5.10.0',
+		}->{$self->perl_version}
+	or die "Failed to resolve perl_version_human";
+	$self->{perl_version_corelist} = $Module::CoreList::version{$self->perl_version_literal+0};
+	unless ( _HASH($self->{perl_version_corelist}) ) {
+		croak("Failed to resolve Module::CoreList hash for " . $self->perl_version_human);
+	}
+
+        # Apply more defaults
 	unless ( defined $self->{trace} ) {
 		$self->{trace} = 1;
 	}
@@ -127,7 +366,10 @@ sub new {
 
 	# Auto-detect online-ness if needed
 	unless ( defined $self->user_agent ) {
-		$self->{user_agent} = LWP::UserAgent->new;
+		$self->{user_agent} = LWP::UserAgent->new(
+			agent   => "$class/" . $VERSION || '0.00',
+			timeout => 30,
+		);
 	}
 	unless ( defined $self->offline ) {
 		$self->{offline} = LWP::Online::offline();
@@ -136,7 +378,12 @@ sub new {
 	# Normalize some params
 	$self->{offline}      = !! $self->offline;
 	$self->{trace}        = !! $self->{trace};
-	$self->{remove_image} = !! $self->remove_image;
+
+	# If we are online and don't have a cpan repository,
+	# use cpan.strawberryperl.com as a default.
+	if ( ! $self->offline and ! $self->cpan ) {
+		$self->{cpan} = URI->new('http://cpan.strawberryperl.com/');
+	}
 
 	# Check params
 	unless ( _STRING($self->download_dir) ) {
@@ -177,12 +424,8 @@ sub new {
 
 	# Clear the previous build
 	if ( -d $self->image_dir ) {
-		if ( $self->remove_image ) {
-			$self->trace("Removing previous " . $self->image_dir . "\n");
-			File::Remove::remove( \1, $self->image_dir );
-		} else {
-			croak("The image_dir directory already exists");
-		}
+		$self->trace("Removing previous " . $self->image_dir . "\n");
+		File::Remove::remove( \1, $self->image_dir );
 	} else {
 		$self->trace("No previous " . $self->image_dir . " found\n");
 	}
@@ -215,10 +458,6 @@ sub new {
 	$self->add_dir('perl');
 	$self->add_dir('licenses');
 	$self->add_uninstall;
-	$self->add_icon(
-		name     => 'Perl Documentation',
-		filename => 'perl\bin\perldoc',
-	);
 
 	# Set some common environment variables
 	$self->add_env( TERM        => 'dumb' );
@@ -236,103 +475,54 @@ sub source_dir {
 
 
 #####################################################################
-# Adding Inno-Setup Information
+# Top Level Process Methods
 
-sub add_icon {
-	my $self   = shift;
-	my %params = @_;
-	$params{name}     = "{group}\\$params{name}";
-	unless ( $params{filename} =~ /^\{/ ) {
-		$params{filename} = "{app}\\$params{filename}";
-	}
-	$self->SUPER::add_icon(%params);
-}
+sub run {
+	my $self  = shift;
+	my $start = time;
+	my $t     = undef;
 
-sub add_env_path {
-	my $self = shift;
-	my @path = @_;
-	my $dir = File::Spec->catdir(
-		$self->image_dir, @path,
-	);
-	unless ( -d $dir ) {
-		croak("PATH directory $dir does not exist");
-	}
-	push @{$self->{env_path}}, [ @path ];
+	# Install the core C toolchain
+	$t = time;
+	$self->install_c_toolchain;
+	$self->trace("Completed install_c_toolchain in " . (time - $t) . " seconds\n");
+
+	# Install any additional C libraries
+	$t = time;
+	$self->install_c_libraries;
+	$self->trace("Completed install_c_libraries in " . (time - $t) . " seconds\n");
+
+	# Install the Perl binary
+	$t = time;
+	$self->install_perl;
+	$self->trace("Completed install_perl in " . (time - $t) . " seconds\n");
+
+	# Install additional Perl modules
+	$t = time;
+	$self->install_perl_modules;
+	$self->trace("Completed install_perl_modules in " . (time - $t) . " seconds\n");
+
+	# Install the Win32 extras
+	$t = time;
+	$self->install_win32_extras;
+	$self->trace("Completed install_win32_extras in " . (time - $t) . " seconds\n");
+
+	# Remove waste and temporary files
+	$t = time;
+	$self->remove_waste;
+	$self->trace("Completed remove_waste in " . (time - $t) . " seconds\n");
+
+	# Write out the exe
+	$t = time;
+	my $exe = $self->write;
+	$self->trace("Completed write in " . (time - $t) . " seconds\n");
+
+	# Finished
+	$self->trace("Distribution generation completed in " . (time - $start) . " seconds\n");
+	$self->trace("Distribution created at " . $self->output_file . "\n");
+
 	return 1;
 }
-
-sub get_env_path {
-	my $self = shift;
-	return join ';', map {
-		File::Spec->catdir( $self->image_dir, @$_ )
-	} @{$self->env_path};
-}
-
-sub get_inno_path {
-	my $self = shift;
-	return join ';', '{olddata}', map {
-		File::Spec->catdir( '{app}', @$_ )
-	} @{$self->env_path};
-}
-
-sub add_env_lib {
-	my $self = shift;
-	my @path = @_;
-	my $dir = File::Spec->catdir(
-		$self->image_dir, @path,
-	);
-	unless ( -d $dir ) {
-		croak("INC directory $dir does not exist");
-	}
-	push @{$self->{env_lib}}, [ @path ];
-	return 1;
-}
-
-sub get_env_lib {
-	my $self = shift;
-	return join ';', map {
-		File::Spec->catdir( $self->image_dir, @$_ )
-	} @{$self->env_lib};
-}
-
-sub get_inno_lib {
-	my $self = shift;
-	return join ';', '{olddata}', map {
-		File::Spec->catdir( '{app}', @$_ )
-	} @{$self->env_lib};
-}
-
-sub add_env_include {
-	my $self = shift;
-	my @path = @_;
-	my $dir = File::Spec->catdir(
-		$self->image_dir, @path,
-	);
-	unless ( -d $dir ) {
-		croak("PATH directory $dir does not exist");
-	}
-	push @{$self->{env_include}}, [ @path ];
-	return 1;
-}
-
-sub get_env_include {
-	my $self = shift;
-	return join ';', map {
-		File::Spec->catdir( $self->image_dir, @$_ )
-	} @{$self->env_include};
-}
-
-sub get_inno_include {
-	my $self = shift;
-	return join ';', '{olddata}', map {
-		File::Spec->catdir( '{app}', @$_ )
-	} @{$self->env_include};
-}
-
-
-
-#####################################################################
-# Main Methods
 
 sub install_c_toolchain {
 	my $self = shift;
@@ -430,10 +620,6 @@ sub install_c_toolchain {
 		share      => 'Perl-Dist-Downloads w32api-3.10.tar.gz',
 		install_to => 'c',
 	);
-	$self->install_file(
-		share      => 'Perl-Dist README.w32api',
-		install_to => 'licenses\win32api\README.w32api',
-	);
 
 	# Set up the environment variables for the binaries
 	$self->add_env_path(    'c', 'bin'     );
@@ -443,38 +629,54 @@ sub install_c_toolchain {
 	return 1;
 }
 
+# No additional modules by default
 sub install_c_libraries {
-	my $self = shift;
-	$self->install_zlib;
-	$self->install_libiconv;
-	$self->install_libxml;
-	return 1;
+	shift->trace("install_c_libraries: Nothing to do\n");
 }
 
+# Install Perl 5.10.0 by default.
+# Just hand off to the larger set of Perl install methods.
 sub install_perl {
 	my $self = shift;
+	my $install_perl_method = "install_perl_" . $self->perl_version;
+	unless ( $self->can($install_perl_method) ) {
+		croak("Cannot generate perl, missing $install_perl_method method in " . ref($self));
+	}
+	$self->$install_perl_method(@_);
+}
 
-	# By default, install Perl 5.8.8
-	$self->install_perl_588(
-		name       => 'perl',
-		share      => 'Perl-Dist-Downloads perl-5.8.8.tar.gz',
-		unpack_to  => 'perl',
-		patch      => {
-			'Install.pm'   => 'lib\ExtUtils\Install.pm',
-			'Installed.pm' => 'lib\ExtUtils\Installed.pm',
-			'Packlist.pm'  => 'lib\ExtUtils\Packlist.pm',
-		},
-		install_to => 'perl',
-		license    => {
-			'perl-5.8.8/Readme'   => 'perl/Readme',
-			'perl-5.8.8/Artistic' => 'perl/Artistic',
-			'perl-5.8.8/Copying'  => 'perl/Copying',
-		},
+# No additional modules by default
+sub install_perl_modules {
+	shift->trace("install_perl_modules: Nothing to do\n");
+}
+
+# Install links and launchers and so on
+sub install_win32_extras {
+	my $self = shift;
+
+	$self->install_website(
+		name => 'CPAN Search',
+		url  => 'http://search.cpan.org/',
+	);
+	$self->install_launcher(
+		name => 'CPAN Client',
+		bin  => 'cpan',
+	);
+
+	$self->install_website(
+		name => 'Perl Documentation',
+		url  => 'http://perldoc.perl.org/',
+	);
+
+	$self->install_website(
+		name => 'Win32 Perl Wiki',
+		url  => 'http://win32.perl.org/',
 	);
 
 	return 1;
 }
 
+# Delete various stuff we won't be needing
 sub remove_waste {
 	my $self = shift;
 	$self->trace("Removing doc, man, info and html documentation...\n");
@@ -488,6 +690,13 @@ sub remove_waste {
 	$self->trace("Removing CPAN build directories and download caches...\n");
 	File::Remove::remove( \1, $self->_dir('cpan', 'sources') );
 	File::Remove::remove( \1, $self->_dir('cpan', 'build')   );
+	return 1;
+}
+
+# By default, create an .exe installer
+sub write {
+	my $self = shift;
+	$self->{output_file} = $self->write_exe(@_);
 	return 1;
 }
 
@@ -624,57 +833,28 @@ sub install_perl_588_bin {
 	return 1;
 }
 
-# Resolve the distribution list at startup time
-my $toolchain = Perl::Dist::Util::Toolchain->new( qw{
-	ExtUtils::MakeMaker
-	File::Path
-	ExtUtils::Command
-	Win32API::File
-	ExtUtils::Install
-	ExtUtils::Manifest
-	Test::Harness
-	Test::Simple
-	ExtUtils::CBuilder
-	ExtUtils::ParseXS
-	version
-	Scalar::Util
-	IO::Compress::Base
-	Compress::Raw::Zlib
-	Compress::Raw::Bzip2
-	IO::Compress::Zip
-	IO::Compress::Bzip2
-	Compress::Zlib
-	Compress::Bzip2
-	IO::Zlib
-	File::Spec
-	File::Temp
-	Win32API::Registry
-	Win32::TieRegistry
-	File::HomeDir
-	File::Which
-	Archive::Zip
-	Archive::Tar
-	YAML
-	Net::FTP
-	Digest::MD5
-	Digest::SHA1
-	Digest::SHA
-	Module::Build
-	Term::Cap
-	CPAN
-	Term::ReadLine::Perl
-} );
+sub find_588_toolchain {
+	my $self = shift;
 
-# Get the regular Perl to generate the list.
-# Run it in a separate process so we don't hold
-# any permanent CPAN.pm locks (for now).
-$toolchain->delegate;
-if ( $toolchain->{errstr} ) {
-	die "Failed to generate toolchain distributions";
+	# Resolve the distribution list at startup time
+	my $toolchain588 = Perl::Dist::Util::Toolchain->new(
+		perl_version => $self->perl_version_literal,
+	);
+
+	# Get the regular Perl to generate the list.
+	# Run it in a separate process so we don't hold
+	# any permanent CPAN.pm locks (for now).
+	$toolchain588->delegate;
+	if ( $toolchain588->{errstr} ) {
+		die "Failed to generate toolchain distributions";
+	}
+
+	return $toolchain588;
 }
 
 sub install_perl_588_toolchain {
-	my $self = shift;
+	my $self      = shift;
+	my $toolchain = $self->find_588_toolchain;
 
 	foreach my $dist ( @{$toolchain->{dists}} ) {
 		my $force             = 0;
@@ -845,8 +1025,51 @@ sub install_perl_5100_bin {
 	return 1;
 }
 
-sub install_perl_5100_toolchain {
+sub find_5100_toolchain {
 	my $self = shift;
+
+	# Resolve the distribution list at startup time
+	my $toolchain5100 = Perl::Dist::Util::Toolchain->new(
+		perl_version => $self->perl_version_literal,
+	);
+
+	# Get the regular Perl to generate the list.
+	# Run it in a separate process so we don't hold
+	# any permanent CPAN.pm locks (for now).
+	$toolchain5100->delegate;
+	if ( $toolchain5100->{errstr} ) {
+		die "Failed to generate toolchain distributions";
+	}
+
+	return $toolchain5100;
+}
+
+sub install_perl_5100_toolchain {
+	my $self      = shift;
+	my $toolchain = $self->find_5100_toolchain;
+
+	foreach my $dist ( @{$toolchain->{dists}} ) {
+		my $force             = 0;
+		my $automated_testing = 0;
+		if ( $dist =~ /Scalar-List-Util/ ) {
+			# Does something weird with tainting
+			$force = 1;
+		}
+		if ( $dist =~ /File-Temp/ ) {
+			# Lock tests break
+			$force = 1;
+		}
+		if ( $dist =~ /Term-ReadLine-Perl/ ) {
+			# Does evil things when testing, and
+			# so testing cannot be automated.
+			$automated_testing = 1;
+		}
+		$self->install_distribution(
+			name              => $dist,
+			force             => $force,
+			automated_testing => $automated_testing,
+		);
+	}
 
 	return 1;
 }
@@ -856,7 +1079,7 @@ sub install_perl_5100_toolchain {
 
 
 #####################################################################
-# Install C Libraries
+# Installing C Libraries
 
 sub install_zlib {
 	my $self = shift;
@@ -939,7 +1162,7 @@ sub install_libxml {
 
 
 #####################################################################
-# Generic Installation Methods
+# General Installation Methods
 
 sub install_binary {
 	my $self   = shift;
@@ -1183,6 +1406,48 @@ sub install_file {
 	return 1;
 }
 
+sub install_launcher {
+	my $self     = shift;
+	my $launcher = Perl::Dist::Asset::Launcher->new(@_);
+
+	# Check the script exists
+	my $to = File::Spec->catfile( $self->image_dir, 'perl', 'bin', $launcher->bin . '.bat' );
+	unless ( -f $to ) {
+		die "The script '" . $launcher->bin . '" does not exist';
+	}
+
+	# Add the icon
+	$self->add_icon(
+		name     => $launcher->name,
+		filename => '{app}\\perl\bin\\' . $launcher->bin . '.bat',
+	);
+
+	return 1;
+}
+
+sub install_website {
+	my $self    = shift;
+	my $website = Perl::Dist::Asset::Website->new(@_);
+
+	# Write the file directly to the image
+	my $to = File::Spec->catfile( $self->image_dir, $website->file );
+	$website->write( $to );
+
+	# Add the file to the files section of the inno script
+	$self->add_file(
+		source     => $website->file,
+		dest_dir   => '{app}',
+	);
+
+	# Add the file to the icons section of the inno script
+	$self->add_icon(
+		name     => $website->name,
+		filename => '{app}\\' . $website->file,
+	);
+
+	return 1;
+}
+
 
 
 
@@ -1225,16 +1490,6 @@ sub write_exe {
 	$self->SUPER::write_exe(@_);
 }
 
-sub write_iss {
-	my $self = shift;
-	my $file = $self->iss_file;
-	my $iss  = $self->as_string;
-	open( ISS, ">$file" ) or croak("Failed to open ISS file to write");
-	print ISS $iss;
-	close ISS;
-	return $file;
-}
-
 sub write_zip {
 	my $self = shift;
 	my $file = File::Spec->catfile(
@@ -1252,6 +1507,114 @@ sub write_zip {
 	$zip->writeToFileNamed( $file );
 
 	return $file;
+}
+
+sub write_iss {
+	my $self = shift;
+	my $file = $self->iss_file;
+	my $iss  = $self->as_string;
+	open( ISS, ">$file" ) or croak("Failed to open ISS file to write");
+	print ISS $iss;
+	close ISS;
+	return $file;
+}
+
+
+
+
+
+#####################################################################
+# Adding Inno-Setup Information
+
+sub add_icon {
+	my $self   = shift;
+	my %params = @_;
+	$params{name}     = "{group}\\$params{name}";
+	unless ( $params{filename} =~ /^\{/ ) {
+		$params{filename} = "{app}\\$params{filename}";
+	}
+	$self->SUPER::add_icon(%params);
+}
+
+sub add_env_path {
+	my $self = shift;
+	my @path = @_;
+	my $dir = File::Spec->catdir(
+		$self->image_dir, @path,
+	);
+	unless ( -d $dir ) {
+		croak("PATH directory $dir does not exist");
+	}
+	push @{$self->{env_path}}, [ @path ];
+	return 1;
+}
+
+sub get_env_path {
+	my $self = shift;
+	return join ';', map {
+		File::Spec->catdir( $self->image_dir, @$_ )
+	} @{$self->env_path};
+}
+
+sub get_inno_path {
+	my $self = shift;
+	return join ';', '{olddata}', map {
+		File::Spec->catdir( '{app}', @$_ )
+	} @{$self->env_path};
+}
+
+sub add_env_lib {
+	my $self = shift;
+	my @path = @_;
+	my $dir = File::Spec->catdir(
+		$self->image_dir, @path,
+	);
+	unless ( -d $dir ) {
+		croak("INC directory $dir does not exist");
+	}
+	push @{$self->{env_lib}}, [ @path ];
+	return 1;
+}
+
+sub get_env_lib {
+	my $self = shift;
+	return join ';', map {
+		File::Spec->catdir( $self->image_dir, @$_ )
+	} @{$self->env_lib};
+}
+
+sub get_inno_lib {
+	my $self = shift;
+	return join ';', '{olddata}', map {
+		File::Spec->catdir( '{app}', @$_ )
+	} @{$self->env_lib};
+}
+
+sub add_env_include {
+	my $self = shift;
+	my @path = @_;
+	my $dir = File::Spec->catdir(
+		$self->image_dir, @path,
+	);
+	unless ( -d $dir ) {
+		croak("PATH directory $dir does not exist");
+	}
+	push @{$self->{env_include}}, [ @path ];
+	return 1;
+}
+
+sub get_env_include {
+	my $self = shift;
+	return join ';', map {
+		File::Spec->catdir( $self->image_dir, @$_ )
+	} @{$self->env_include};
+}
+
+sub get_inno_include {
+	my $self = shift;
+	return join ';', '{olddata}', map {
+		File::Spec->catdir( '{app}', @$_ )
+	} @{$self->env_include};
 }
 
 
@@ -1338,10 +1701,31 @@ sub _perl {
 
 sub _run3 {
 	my $self = shift;
+
+	# Clean the simple environment keys
 	local $ENV{PERL5LIB} = '';
 	local $ENV{INCLUDE}  = $self->get_env_include;
 	local $ENV{LIB}      = $self->get_env_lib;
-	local $ENV{PATH}     = $self->get_env_path . ';' . $ENV{PATH};
+
+	# Remove any Perl installs from PATH to prevent
+	# "which" discovering stuff it shouldn't.
+	my @path = split /;/, $ENV{PATH};
+	my @keep = ();
+	foreach my $p ( @path ) {
+		# Strip any path that doesn't exist
+		next unless -d $p;
+
+		# Strip any path that contains either dmake or perl.exe.
+		# This should remove both the ...\c\bin and ...\perl\bin
+		# parts of the paths that Vanilla/Strawberry added.
+		next if -f File::Spec->catfile( $p, 'dmake.exe' );
+		next if -f File::Spec->catfile( $p, 'perl.exe'  );
+
+		push @keep, $p;
+	}
+	local $ENV{PATH} = $self->get_env_path . ';' . join( ';', @keep );
+
+	# Execute the child process
 	return IPC::Run3::run3( [ @_ ],
 		\undef,
 		$self->debug_stdout,

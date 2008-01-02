@@ -12,7 +12,7 @@ use Perl::Dist::Inno::Registry ();
 
 use vars qw{$VERSION};
 BEGIN {
-	$VERSION = '0.51';
+	$VERSION = '0.90_01';
 }
 
 use Object::Tiny qw{
@@ -68,7 +68,7 @@ sub new {
 		croak("Missing or invalid output_dir param");
 	}
 	unless ( -d $self->output_dir ) {
-		croak("The output_dir directory does not exist");
+		croak("The output_dir " . $self->output_dir . "directory does not exist");
 	}
 	unless ( -w $self->output_dir ) {
 		croak("The output_dir directory is not writable");
@@ -254,6 +254,7 @@ sub as_string {
 		'; Where the output goes',
 		'OutputDir='          . $self->output_dir,
 		'OutputBaseFilename=' . $self->output_base_filename,
+		'UsePreviousAppDir='  . 'no',
 		'',
 		'; Source location',
 		'SourceDir='          . $self->source_dir,
@@ -265,6 +266,10 @@ sub as_string {
 		'Compression='        . 'lzma',
 		'SolidCompression='   . 'yes',
 		'ChangesEnvironment=' . 'yes',
+		'',
+		'; Delete old install',
+		'[InstallDelete]',
+		'Type: filesandordirs; Name: "' . $self->source_dir . '"',
 		'',
 	);
 

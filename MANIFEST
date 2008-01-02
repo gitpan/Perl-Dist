@@ -14,11 +14,12 @@ lib/Perl/Dist/Asset.pm
 lib/Perl/Dist/Asset/Binary.pm
 lib/Perl/Dist/Asset/Distribution.pm
 lib/Perl/Dist/Asset/File.pm
+lib/Perl/Dist/Asset/Launcher.pm
 lib/Perl/Dist/Asset/Library.pm
 lib/Perl/Dist/Asset/Module.pm
 lib/Perl/Dist/Asset/Perl.pm
+lib/Perl/Dist/Asset/Website.pm
 lib/Perl/Dist/Bootstrap.pm
-lib/Perl/Dist/Builder.pm
 lib/Perl/Dist/Inno.pm
 lib/Perl/Dist/Inno/File.pm
 lib/Perl/Dist/Inno/Icon.pm

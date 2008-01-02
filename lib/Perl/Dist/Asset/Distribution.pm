@@ -11,7 +11,7 @@ use URI::file;
 
 use vars qw{$VERSION};
 BEGIN {
-	$VERSION = '0.51';
+	$VERSION = '0.90_01';
 }
 
 use Object::Tiny qw{
