@@ -1,12 +1,14 @@
 package Perl::Dist::Inno::File;
 
+use 5.006;
 use strict;
+use warnings;
 use Carp         qw{ croak               };
 use Params::Util qw{ _IDENTIFIER _STRING };
 
 use vars qw{$VERSION};
 BEGIN {
-	$VERSION = '0.90_01';
+	$VERSION = '0.90_02';
 }
 
 use Object::Tiny qw{

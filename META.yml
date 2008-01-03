@@ -4,6 +4,7 @@ author:
   - Adam Kennedy <adamk@cpan.org>
 build_requires: 
   ExtUtils::MakeMaker: 6.11
+  Probe::Perl: 0.01
   Test::LongString: 0
   Test::More: 0.42
   Test::Script: 1.02
@@ -45,4 +46,4 @@ requires:
   Tie::File: 0
   YAML::Tiny: 1.12
   perl: 5.6.0
-version: 0.90_01
+version: 0.90_02

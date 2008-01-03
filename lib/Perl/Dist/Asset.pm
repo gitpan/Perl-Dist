@@ -2,7 +2,9 @@ package Perl::Dist::Asset;
 
 # Convenience base class for Perl::Dist assets
 
+use 5.006;
 use strict;
+use warnings;
 use Carp             'croak';
 use File::Spec       ();
 use File::Spec::Unix ();
@@ -12,7 +14,7 @@ use Params::Util     qw{ _STRING _CODELIKE };
 
 use vars qw{$VERSION};
 BEGIN {
-	$VERSION = '0.90_01';
+	$VERSION = '0.90_02';
 }
 
 use Object::Tiny qw{

@@ -128,8 +128,9 @@ which details how to sub-class the distribution.
 
 =cut
 
-use 5.005;
+use 5.006;
 use strict;
+use warnings;
 use Carp                  'croak';
 use Archive::Tar          ();
 use Archive::Zip          ();
@@ -154,7 +155,7 @@ use base 'Perl::Dist::Inno::Script';
 
 use vars qw{$VERSION};
 BEGIN {
-        $VERSION = '0.90_01';
+        $VERSION = '0.90_02';
 }
 
 use Object::Tiny qw{
@@ -167,8 +168,6 @@ use Object::Tiny qw{
 	iss_file
 	user_agent
 	perl_version
-	perl_version_literal
-	perl_version_human
 	perl_version_corelist
 	cpan
 	bin_perl
@@ -321,27 +320,23 @@ sub new {
 		}
 		File::Path::mkpath($params{image_dir});
 	}
+	unless ( defined $params{perl_version} ) {
+		$params{perl_version} = '5100';
+	}
 
 	# Hand off to the parent class
 	my $self = $class->SUPER::new(%params);
 
 	# Check the version of Perl to build
-	unless ( defined $self->perl_version ) {
-		$self->{perl_version} = '5100';
+	unless ( $self->perl_version_literal ) {
+		croak "Failed to resolve perl_version_literal";
+	}
+	unless ( $self->perl_version_human ) {
+		croak "Failed to resolve perl_version_human";
 	}
 	unless ( $self->can('install_perl_' . $self->perl_version) ) {
-		croak("Perl::Dist does not support Perl " . $self->perl_version);
+		croak("$class does not support Perl " . $self->perl_version);
 	}
-	$self->{perl_version_literal} = {
-		588  => '5.008008',
-		5100 => '5.010000',
-		}->{$self->perl_version}
-	or die "Failed to resolve perl_version_literal";
-	$self->{perl_version_human} = {
-		588  => '5.8.8',
-		5100 => '5.10.0',
-		}->{$self->perl_version}
-	or die "Failed to resolve perl_version_human";
 	$self->{perl_version_corelist} = $Module::CoreList::version{$self->perl_version_literal+0};
 	unless ( _HASH($self->{perl_version_corelist}) ) {
 		croak("Failed to resolve Module::CoreList hash for " . $self->perl_version_human);
@@ -468,6 +463,40 @@ sub new {
 
 sub source_dir {
 	$_[0]->image_dir;
+}
+
+sub perl_version_literal {
+	return {
+		588  => '5.008008',
+		5100 => '5.010000',
+	}->{$_[0]->perl_version} || 0;
+}
+
+sub perl_version_human {
+	return {
+		588  => '5.8.8',
+		5100 => '5.10.0',
+	}->{$_[0]->perl_version} || 0;
+}
+
+# Default the versioned name to an unversioned name
+sub app_ver_name {
+	my $self = shift;
+	if ( $self->{app_ver_name} ) {
+		return $self->{app_ver_name};
+	}
+	return $self->app_name . ' ' . $self->perl_version_human;
+}
+
+# Default the output filename to the id plus the current date
+sub output_base_filename {
+	my $self = shift;
+	if ( $self->{output_base_filename} ) {
+		return $self->{output_base_filename};
+	}
+	return $self->app_id
+	     . '-' . $self->perl_version_human
+	     . '-' . $self->output_date_string;
 }
 
 
@@ -984,8 +1013,8 @@ sub install_perl_5100_bin {
 			local $/ = undef;
 			open( MAKEFILE, 'makefile.mk' ) or die "open: $!";
 			my $makefile_mk = <MAKEFILE>;
+			close( MAKEFILE ) or die "close: $!";
 			$makefile_mk =~ s/(?:\015{1,2}\012|\015|\012)/\n/sg;
-			close MAKEFILE;
 
 			# Apply the changes
 			$makefile_mk =~ s/^(INST_DRV\s+\*=\s+).+?(\n)/$1$vol$2/m;
@@ -993,9 +1022,9 @@ sub install_perl_5100_bin {
 			$makefile_mk =~ s/C\:\\MinGW/$image_dir\\c/;
 
 			# Write out the makefile
-			open( MAKEFILE, '>makefile.mk' ) or die "open: $!";
-			print MAKEFILE $makefile_mk;
-			close MAKEFILE;
+			open ( MAKEFILE, '>makefile.mk' ) or die "open: $!";
+			print( MAKEFILE $makefile_mk    ) or die "print: $!";
+			close( MAKEFILE                 ) or die "close: $!";
 		}
 
 		$self->trace("Building perl...\n");

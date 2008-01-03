@@ -1,30 +1,30 @@
 package Perl::Dist::Inno::Script;
 
+use 5.006;
 use strict;
-use Carp                       qw{ croak   };
+use warnings;
+use Carp                       qw{ croak };
 use File::Spec                 ();
 use File::Temp                 ();
 use IPC::Run3                  ();
-use Params::Util               qw{ _STRING };
+use Params::Util               qw{ _STRING _IDENTIFIER };
 use Perl::Dist::Inno::File     ();
 use Perl::Dist::Inno::Icon     ();
 use Perl::Dist::Inno::Registry ();
 
 use vars qw{$VERSION};
 BEGIN {
-	$VERSION = '0.90_01';
+	$VERSION = '0.90_02';
 }
 
 use Object::Tiny qw{
+	app_id
 	app_name
-	app_ver_name
 	app_publisher
 	app_publisher_url
-	app_id
 	default_group_name
 	default_dir_name
 	output_dir
-	output_base_filename
 	source_dir
 	bin_compil32
 };
@@ -42,7 +42,10 @@ sub new {
 		$self->{default_group_name} = $self->app_name;
 	}
 
-	# Check params
+	# Check and default params
+	unless ( _IDENTIFIER($self->app_id) ) {
+		croak("Missing or invalid app_id param");
+	}
 	unless ( _STRING($self->app_name) ) {
 		croak("Missing or invalid app_name param");
 	}
@@ -54,9 +57,6 @@ sub new {
 	}
 	unless ( _STRING($self->app_publisher_url) ) {
 		croak("Missing or invalid app_publisher_uri param");
-	}
-	unless ( _STRING($self->app_id) ) {
-		croak("Missing or invalid app_id param");
 	}
 	unless ( _STRING($self->default_group_name) ) {
 		croak("Missing or invalid default_group_name param");
@@ -100,6 +100,24 @@ sub new {
 	$self->{bin_compil32} = $innosetup_file;
 
 	return $self;
+}
+
+# Default the versioned name to an unversioned name
+sub app_ver_name {
+	$_[0]->{app_ver_name} or
+	$_[0]->app_name;
+}
+
+# Default the output filename to the id plus the current date
+sub output_base_filename {
+	$_[0]->{output_base_filename} or
+	$_[0]->app_id . '-' . $_[0]->output_date_string;
+}
+
+# Convenience method
+sub output_date_string {
+	my @t = scalar localtime;
+	return sprintf( "%04d%02d%02d", $t[5] + 1900, $t[4] + 1, $t[3] );
 }
 
 sub files {
@@ -168,8 +186,8 @@ sub add_dir {
 	my $self = shift;
 	my $name = shift;
 	$self->add_file(
-		source   => "$name\\*",
-		dest_dir => "{app}\\$name",
+		source             => "$name\\*",
+		dest_dir           => "{app}\\$name",
 		recurse_subdirs    => 1,
 		create_all_subdirs => 1,
 	);
@@ -189,17 +207,6 @@ sub add_uninstall {
 	$self->add_icon(
 		name     => "{cm:UninstallProgram,$name}",
 		filename => '{uninstallexe}',
-	);
-	return 1;
-}
-
-sub add_url {
-	my $self = shift;
-	my $name = shift;
-	my $url  = shift;
-	$self->add_icon(
-		name     => '',
-		filename =>
 	);
 	return 1;
 }

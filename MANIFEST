@@ -33,7 +33,6 @@ MANIFEST			This list of files
 META.yml
 README
 script/perldist
-share/bootperl/CPAN_Config.pm
 share/CPAN_Config.pm
 share/ExtUtils_Install588.pm
 share/ExtUtils_Installed588.pm
