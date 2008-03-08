@@ -13,7 +13,7 @@ use base 'Process::Delegatable',
 
 use vars qw{$VERSION @DELEGATE};
 BEGIN {
-	$VERSION  = '0.90_02';
+	$VERSION  = '0.90_03';
 	@DELEGATE = ();
 }
 
@@ -56,6 +56,11 @@ my %MODULES = (
 		Term::Cap
 		CPAN
 		Term::ReadLine::Perl
+
+		URI
+		HTML::Tagset
+		HTML::Parser
+		LWP::UserAgent
 	} ],
 );
 $MODULES{'5.010000'} = $MODULES{'5.008008'};

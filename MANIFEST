@@ -17,6 +17,7 @@ lib/Perl/Dist/Asset/File.pm
 lib/Perl/Dist/Asset/Launcher.pm
 lib/Perl/Dist/Asset/Library.pm
 lib/Perl/Dist/Asset/Module.pm
+lib/Perl/Dist/Asset/PAR.pm
 lib/Perl/Dist/Asset/Perl.pm
 lib/Perl/Dist/Asset/Website.pm
 lib/Perl/Dist/Bootstrap.pm
@@ -25,6 +26,7 @@ lib/Perl/Dist/Inno/File.pm
 lib/Perl/Dist/Inno/Icon.pm
 lib/Perl/Dist/Inno/Registry.pm
 lib/Perl/Dist/Inno/Script.pm
+lib/Perl/Dist/Machine.pm
 lib/Perl/Dist/Util/Toolchain.pm
 lib/Perl/Dist/Vanilla.pm
 LICENSE
@@ -37,7 +39,11 @@ share/CPAN_Config.pm
 share/ExtUtils_Install588.pm
 share/ExtUtils_Installed588.pm
 share/ExtUtils_Packlist588.pm
+share/vanilla/Config5100.pm
+share/vanilla/Config_heavy5100.pl
 share/vanilla/CPAN_Config.pm
+share/vanilla/libexpat-vanilla.par
+share/vanilla/libexpat-vanilla.zip
 t/01_compile.t
 t/03_inno_file.t
 t/04_inno_icon.t
@@ -51,6 +57,8 @@ t/11_dist_run.t
 t/12_perl_5100.t
 t/13_boot_new.t
 t/14_vanilla_new.t
+t/15_machine.t
+t/97_meta.t
 t/98_pod.t
 t/99_pmv.t
 t/data/cpan/authors/id/readme.txt

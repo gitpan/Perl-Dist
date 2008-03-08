@@ -15,7 +15,6 @@ Creating a custom distribution
   use strict;
   use base 'Perl::Dist::Strawberry';
   
-  
   1;
 
 Building that distribution...
@@ -108,11 +107,11 @@ follows:
 
 =item 5. Install additional CPAN modules
 
-=item 6. Install Win32 "extras" such as start menu entries
+=item 6. Install Win32-specific things such as start menu entries
 
 =item 7. Remove any files we don't need in the final distribution
 
-=item 8. Generate the zip or exe files as needed.
+=item 8. Generate the zip, exe or msi files.
 
 =back
 
@@ -150,12 +149,13 @@ use LWP::UserAgent        ();
 use LWP::Online           ();
 use Module::CoreList      ();
 use Tie::File             ();
+use PAR::Dist             ();
 
 use base 'Perl::Dist::Inno::Script';
 
 use vars qw{$VERSION};
 BEGIN {
-        $VERSION = '0.90_02';
+        $VERSION  = '0.90_03';
 }
 
 use Object::Tiny qw{
@@ -180,6 +180,7 @@ use Object::Tiny qw{
 	debug_stdout
 	debug_stderr
 	output_file
+	force
 };
 
 use Perl::Dist::Inno                ();
@@ -189,10 +190,50 @@ use Perl::Dist::Asset::Library      ();
 use Perl::Dist::Asset::Perl         ();
 use Perl::Dist::Asset::Distribution ();
 use Perl::Dist::Asset::Module       ();
+use Perl::Dist::Asset::PAR          ();
 use Perl::Dist::Asset::File         ();
 use Perl::Dist::Asset::Website      ();
 use Perl::Dist::Asset::Launcher     ();
 use Perl::Dist::Util::Toolchain     ();
+
+
+
+
+
+#####################################################################
+# Upstream Binary Packages (Mirrored)
+
+sub binary_root { 'http://strawberryperl.com/package' }
+
+my %PACKAGES = (
+	'dmake'         => 'dmake-4.8-20070327-SHAY.zip',
+	'gcc-core'      => 'gcc-core-3.4.5-20060117-1.tar.gz',
+	'gcc-g++'       => 'gcc-g++-3.4.5-20060117-1.tar.gz',
+	'mingw-make'    => 'mingw32-make-3.81-2.tar.gz',
+	'binutils'      => 'binutils-2.17.50-20060824-1.tar.gz',
+	'mingw-runtime' => 'mingw-runtime-3.13.tar.gz',
+	'w32api'        => 'w32api-3.10.tar.gz',
+	'libiconv-dep'  => 'libiconv-1.9.2-1-dep.zip',
+	'libiconv-lib'  => 'libiconv-1.9.2-1-lib.zip',
+	'libiconv-bin'  => 'libiconv-1.9.2-1-bin.zip',
+);
+
+sub binary_file {
+	unless ( $PACKAGES{$_[1]} ) {
+		croak("Unknown package '$_[1]'");
+	}
+	return $PACKAGES{$_[1]};
+}
+
+sub binary_url {
+	my $self = shift;
+	my $file = shift;
+	unless ( $file =~ /\.(zip|gz|tgz)$/i ) {
+		# Shorthand, map to full file name
+		$file = $self->binary_file($file, @_);
+	}
+	return $self->binary_root . '/' . $file;
+}
 
 
 
@@ -343,6 +384,9 @@ sub new {
 	}
 
         # Apply more defaults
+	unless ( defined $self->{force} ) {
+		$self->{force} = 0;
+	}
 	unless ( defined $self->{trace} ) {
 		$self->{trace} = 1;
 	}
@@ -373,6 +417,7 @@ sub new {
 	# Normalize some params
 	$self->{offline}      = !! $self->offline;
 	$self->{trace}        = !! $self->{trace};
+	$self->{force}        = !! $self->force;
 
 	# If we are online and don't have a cpan repository,
 	# use cpan.strawberryperl.com as a default.
@@ -461,22 +506,52 @@ sub new {
         return $self;
 }
 
+=pod
+
+=head2 offline
+
+The B<Perl::Dist> module has limited ability to build offline, if all
+packages have already been downloaded and cached.
+
+The connectedness of the Perl::Dist object is checked automatically
+be default using L<LWP::Online>. It can be overidden by providing an
+offline param to the constructor.
+
+The C<offline> accessor returns true if no connection to "the internet"
+is available and the object will run in offline mode, or false
+otherwise.
+
+=head2 download_dir
+
+The C<download_dir> accessor returns the path to the directory that
+packages of various types will be downloaded and cached to.
+
+An explicit value can be provided via a C<download_dir> param to the
+constructor. Otherwise the value is derived from C<temp_dir>.
+
+=head2 image_dir
+
+The C<image_dir> accessor returns the path to the built distribution
+image. That is, the directory in which the build C/Perl code and
+modules will be installed on the build server.
+
+At the present time, this is also the path to which Perl will be
+installed on the user's machine via the C<source_dir> accessor,
+which is an alias to the L<Perl::Dist::Inno::Script> method
+C<source_dir>. (although theoretically they can be different,
+this is likely to break the user's Perl install)
+
+=cut
+
+
+
+
+
+#####################################################################
+# Perl::Dist::Inno::Script Methods
+
 sub source_dir {
 	$_[0]->image_dir;
-}
-
-sub perl_version_literal {
-	return {
-		588  => '5.008008',
-		5100 => '5.010000',
-	}->{$_[0]->perl_version} || 0;
-}
-
-sub perl_version_human {
-	return {
-		588  => '5.8.8',
-		5100 => '5.10.0',
-	}->{$_[0]->perl_version} || 0;
 }
 
 # Default the versioned name to an unversioned name
@@ -504,7 +579,73 @@ sub output_base_filename {
 
 
 #####################################################################
+# Perl::Dist::Inno Main Methods
+
+=pod
+
+=head2 perl_version
+
+The C<perl_version> accessor returns the shorthand perl version
+as a string (consisting of the three-part version with dots
+removed).
+
+Thus Perl 5.8.8 will be "588" and Perl 5.10.0 will return "5100".
+
+=head2 perl_version_literal
+
+The C<perl_version_literal> method returns the literal numeric Perl
+version for the distribution.
+
+For Perl 5.8.8 this will be '5.008008' and for Perl 5.10.0 this will
+be '5.010000'.
+
+=cut
+
+sub perl_version_literal {
+	return {
+		588  => '5.008008',
+		5100 => '5.010000',
+	}->{$_[0]->perl_version} || 0;
+}
+
+=pod
+
+=head2 perl_version_human
+
+The C<perl_version_human> method returns the "marketing" form
+of the Perl version.
+
+This will be either '5.8.8' or '5.10.0'.
+
+=cut
+
+sub perl_version_human {
+	return {
+		588  => '5.8.8',
+		5100 => '5.10.0',
+	}->{$_[0]->perl_version} || 0;
+}
+
+
+
+
+
+#####################################################################
 # Top Level Process Methods
+
+=pod
+
+=head1 run
+
+The C<run> method is the main method for the class.
+
+It does a complete build of a product, spitting out an installer.
+
+Returns true, or throws an exception on error.
+
+This method may take an hour or more to run.
+
+=cut
 
 sub run {
 	my $self  = shift;
@@ -553,102 +694,44 @@ sub run {
 	return 1;
 }
 
+=pod
+
+=head2 install_c_toolchain
+
+The C<install_c_toolchain> method is used by C<run> to install various
+binary packages to provide a working C development environment.
+
+By default, the C toolchain consists of dmake, gcc (C/C++), binutils,
+pexports, the mingw runtime environment, and the win32api C package.
+
+Although dmake is the "standard" make for Perl::Dist distributions,
+it will also install...
+
+TO BE CONTINUED
+
+=cut
+
+# Install the required toolchain elements.
+# We use separate methods for each tool to make
+# it easier for individual distributions to customize
+# the versions of tools they incorporate.
 sub install_c_toolchain {
 	my $self = shift;
 
-	# Install dmake
-	$self->install_binary(
-		name       => 'dmake',
-		share      => 'Perl-Dist-Downloads dmake-4.8-20070327-SHAY.zip',
-		license    => {
-			'dmake/COPYING'            => 'dmake/COPYING',
-			'dmake/readme/license.txt' => 'dmake/license.txt',
-		},
-		install_to => {
-			'dmake/dmake.exe' => 'c/bin/dmake.exe',	
-			'dmake/startup'   => 'c/bin/startup',
-		},
-	);
+	# The primary make
+	$self->install_dmake;
 
-	# Initialize the make location
-	$self->{bin_make} = File::Spec->catfile(
-		$self->image_dir, 'c', 'bin', 'dmake.exe',
-	);
-	unless ( -x $self->bin_make ) {
-		croak("Can't execute make");
-	}
+	# Core compiler
+	$self->install_gcc;
 
-	# Install the compilers (gcc)
-	$self->install_binary(
-		name       => 'gcc-core',
-		share      => 'Perl-Dist-Downloads gcc-core-3.4.5-20060117-1.tar.gz',
-		license    => {
-			'COPYING'     => 'gcc/COPYING',
-			'COPYING.lib' => 'gcc/COPYING.lib',
-		},
-		install_to => 'c',
-	);
-	$self->install_binary(
-		name       => 'gcc-g++',
-		share      => 'Perl-Dist-Downloads gcc-g++-3.4.5-20060117-1.tar.gz',
-		install_to => 'c',
-	);
-
-	# Install the binary utilities
-	$self->install_binary(
-		name       => 'mingw-make',
-		share      => 'Perl-Dist-Downloads mingw32-make-3.81-2.tar.gz',
-		install_to => 'c',
-	);
-
-	$self->install_binary(
-		name       => 'binutils',
-		share      => 'Perl-Dist-Downloads binutils-2.17.50-20060824-1.tar.gz',
-		license    => {
-			'Copying'     => 'binutils/Copying',
-			'Copying.lib' => 'binutils/Copying.lib',
-		},
-		install_to => 'c',
-	);
-	$self->{bin_dlltool} = File::Spec->catfile(
-		$self->image_dir, 'c', 'bin', 'dlltool.exe',
-	);
-	unless ( -x $self->bin_dlltool ) {
-		die "Can't execute dlltool";
-	}
-
-	$self->install_binary(
-		name       => 'pexports',
-		share      => 'Perl-Dist-Downloads pexports-0.43-1.zip',
-		license    => {
-			'pexports-0.43/COPYING' => 'pexports/COPYING',
-		},
-		install_to => {
-			'pexports-0.43/bin' => 'c/bin',
-		},
-	);
-	$self->{bin_pexports} = File::Spec->catfile(
-		$self->image_dir, 'c', 'bin', 'pexports.exe',
-	);
-	unless ( -x $self->bin_pexports ) {
-		die "Can't execute pexports";
-	}
+	# C Utilities
+	$self->install_mingw_make;
+	$self->install_binutils;
+	$self->install_pexports;
 
 	# Install support libraries
-	$self->install_binary(
-		name       => 'mingw-runtime',
-		share      => 'Perl-Dist-Downloads mingw-runtime-3.13.tar.gz',
-		license    => {
-			'doc/mingw-runtime/Contributors' => 'mingw/Contributors',
-			'doc/mingw-runtime/Disclaimer'   => 'mingw/Disclaimer',
-		},
-		install_to => 'c',
-	);
-	$self->install_binary(
-		name       => 'w32api',
-		share      => 'Perl-Dist-Downloads w32api-3.10.tar.gz',
-		install_to => 'c',
-	);
+	$self->install_mingw_runtime;
+	$self->install_win32api;
 
 	# Set up the environment variables for the binaries
 	$self->add_env_path(    'c', 'bin'     );
@@ -766,7 +849,8 @@ sub install_perl_588 {
 sub install_perl_588_bin {
 	my $self = shift;
 	my $perl = Perl::Dist::Asset::Perl->new(
-		cpan => $self->cpan,
+		parent => $self,
+		force  => $self->force,
 		@_,
 	);
 	unless ( $self->bin_make ) {
@@ -838,10 +922,10 @@ sub install_perl_588_bin {
 		$self->trace("Building perl...\n");
 		$self->_make;
 
-		SCOPE: {
+		unless ( $perl->force ) {
 			local $ENV{PERL_SKIP_TTY_TEST} = 1;
-			$self->trace("Testing perl build\n");
-			$self->_make('test') if 0;
+			$self->trace("Testing perl...\n");
+			$self->_make('test');
 		}
 
 		$self->trace("Installing perl...\n");
@@ -862,32 +946,26 @@ sub install_perl_588_bin {
 	return 1;
 }
 
-sub find_588_toolchain {
+sub install_perl_588_toolchain {
 	my $self = shift;
 
 	# Resolve the distribution list at startup time
-	my $toolchain588 = Perl::Dist::Util::Toolchain->new(
+	my $toolchain = Perl::Dist::Util::Toolchain->new(
 		perl_version => $self->perl_version_literal,
 	);
 
 	# Get the regular Perl to generate the list.
 	# Run it in a separate process so we don't hold
-	# any permanent CPAN.pm locks (for now).
-	$toolchain588->delegate;
-	if ( $toolchain588->{errstr} ) {
+	# any permanent CPAN.pm locks.
+	$toolchain->delegate;
+	if ( $toolchain->{errstr} ) {
 		die "Failed to generate toolchain distributions";
 	}
 
-	return $toolchain588;
-}
-
-sub install_perl_588_toolchain {
-	my $self      = shift;
-	my $toolchain = $self->find_588_toolchain;
-
+	# Install the toolchain dists
 	foreach my $dist ( @{$toolchain->{dists}} ) {
-		my $force             = 0;
 		my $automated_testing = 0;
+		my $force             = $self->force;
 		if ( $dist =~ /Scalar-List-Util/ ) {
 			# Does something weird with tainting
 			$force = 1;
@@ -925,6 +1003,21 @@ sub install_perl_588_toolchain {
 #####################################################################
 # Perl 5.10.0 Support
 
+=pod
+
+=head2 install_perl_5100
+
+The C<install_perl_5100> method provides a simplified way to install
+Perl 5.10.0 into the distribution.
+
+It takes care of calling C<install_perl_5100_bin> with the standard
+params, and then calls C<install_perl_5100_toolchain> to set up the
+Perl 5.10.0 CPAN toolchain.
+
+Returns true, or throws an exception on error.
+
+=cut
+
 sub install_perl_5100 {
 	my $self = shift;
 
@@ -939,7 +1032,6 @@ sub install_perl_5100 {
 			'perl-5.10.0/Copying'  => 'perl/Copying',
 		},
 		install_to => 'perl',
-		# force      => 1,
 	);
 
 	# Install the toolchain
@@ -948,10 +1040,48 @@ sub install_perl_5100 {
 	return 1;
 }
 
+=pod
+
+=head2 install_perl_5100_bin
+
+  $self->install_perl_5100_bin(
+      name       => 'perl',
+      dist       => 'RGARCIA/perl-5.10.0.tar.gz',
+      unpack_to  => 'perl',
+      license    => {
+          'perl-5.10.0/Readme'   => 'perl/Readme',
+          'perl-5.10.0/Artistic' => 'perl/Artistic',
+          'perl-5.10.0/Copying'  => 'perl/Copying',
+      },
+      install_to => 'perl',
+  );
+
+The C<install_perl_5100_bin> method takes care of the detailed process
+of building the Perl 5.10.0 binary and installing it into the
+distribution.
+
+A short summary of the process would be that it downloads or otherwise
+fetches the named package, unpacks it, copies out any license files from
+the source code, then tweaks the Win32 makefile to point to the specific
+build directory, and then runs make/make test/make install. It also
+registers some environment variables for addition to the Inno Setup
+script.
+
+It is normally called directly by C<install_perl_5100> rather than
+directly from the API, but is documented for completeness.
+
+It takes a number of parameters that are sufficiently detailed above.
+
+Returns true (after 20 minutes or so) or throws an exception on
+error.
+
+=cut
+
 sub install_perl_5100_bin {
 	my $self = shift;
 	my $perl = Perl::Dist::Asset::Perl->new(
-		cpan => $self->cpan,
+		parent => $self,
+		force  => $self->force,
 		@_,
 	);
 	unless ( $self->bin_make ) {
@@ -1032,7 +1162,7 @@ sub install_perl_5100_bin {
 
 		unless ( $perl->force ) {
 			local $ENV{PERL_SKIP_TTY_TEST} = 1;
-			$self->trace("Testing perl build\n");
+			$self->trace("Testing perl...\n");
 			$self->_make('test');
 		}
 
@@ -1054,32 +1184,26 @@ sub install_perl_5100_bin {
 	return 1;
 }
 
-sub find_5100_toolchain {
+sub install_perl_5100_toolchain {
 	my $self = shift;
 
 	# Resolve the distribution list at startup time
-	my $toolchain5100 = Perl::Dist::Util::Toolchain->new(
+	my $toolchain = Perl::Dist::Util::Toolchain->new(
 		perl_version => $self->perl_version_literal,
 	);
 
 	# Get the regular Perl to generate the list.
 	# Run it in a separate process so we don't hold
-	# any permanent CPAN.pm locks (for now).
-	$toolchain5100->delegate;
-	if ( $toolchain5100->{errstr} ) {
+	# any permanent CPAN.pm locks.
+	$toolchain->delegate;
+	if ( $toolchain->{errstr} ) {
 		die "Failed to generate toolchain distributions";
 	}
 
-	return $toolchain5100;
-}
-
-sub install_perl_5100_toolchain {
-	my $self      = shift;
-	my $toolchain = $self->find_5100_toolchain;
-
+	# Install the toolchain dists
 	foreach my $dist ( @{$toolchain->{dists}} ) {
-		my $force             = 0;
 		my $automated_testing = 0;
+		my $force             = $self->force;
 		if ( $dist =~ /Scalar-List-Util/ ) {
 			# Does something weird with tainting
 			$force = 1;
@@ -1108,7 +1232,88 @@ sub install_perl_5100_toolchain {
 
 
 #####################################################################
-# Installing C Libraries
+# Installing C Toolchain and Library Packages
+
+=pod
+
+=head2 install_dmake
+
+  $dist->install_dmake
+
+The C<install_dmake> method installs the B<dmake> make tool into the
+distribution, and is typically installed during "C toolchain" build
+phase.
+
+It provides the approproate arguments to C<install_binary> and then
+validates that the binary was installed correctly.
+
+Returns true or throws an exception on error.
+
+=cut
+
+sub install_dmake {
+	my $self = shift;
+
+	# Install dmake
+	$self->install_binary(
+		name       => 'dmake',
+		license    => {
+			'dmake/COPYING'            => 'dmake/COPYING',
+			'dmake/readme/license.txt' => 'dmake/license.txt',
+		},
+		install_to => {
+			'dmake/dmake.exe' => 'c/bin/dmake.exe',	
+			'dmake/startup'   => 'c/bin/startup',
+		},
+	);
+
+	# Initialize the make location
+	$self->{bin_make} = File::Spec->catfile(
+		$self->image_dir, 'c', 'bin', 'dmake.exe',
+	);
+	unless ( -x $self->bin_make ) {
+		croak("Can't execute make");
+	}
+
+	return 1;
+}
+
+=pod
+
+=head2 install_gcc
+
+  $dist->install_gcc
+
+The C<install_gcc> method installs the B<GNU C Compiler> into the
+distribution, and is typically installed during "C toolchain" build
+phase.
+
+It provides the appropriate arguments to several C<install_binary>
+calls. The default C<install_gcc> method installs two binary
+packages, the core compiler 'gcc-core' and the C++ compiler 'gcc-c++'.
+
+Returns true or throws an exception on error.
+
+=cut
+
+sub install_gcc {
+	my $self = shift;
+
+
+	# Install the compilers (gcc)
+	$self->install_binary(
+		name       => 'gcc-core',
+		license    => {
+			'COPYING'     => 'gcc/COPYING',
+			'COPYING.lib' => 'gcc/COPYING.lib',
+		},
+	);
+	$self->install_binary(
+		name       => 'gcc-g++',
+	);
+
+	return 1;
+}
 
 sub install_zlib {
 	my $self = shift;
@@ -1116,7 +1321,7 @@ sub install_zlib {
 	# Zlib is a pexport-based lib-install
 	$self->install_library(
 		name       => 'zlib',
-		share      => 'Perl-Dist-Downloads zlib-1.2.3.win32.zip',
+		url        => $self->binary_url('zlib-1.2.3.win32.zip'),
 		unpack_to  => 'zlib',
 		build_a    => {
 			'dll'    => 'zlib-1.2.3.win32/bin/zlib1.dll',
@@ -1133,24 +1338,95 @@ sub install_zlib {
 	return 1;
 }
 
+sub install_mingw_make {
+	my $self = shift;
+
+	$self->install_binary(
+		name => 'mingw-make',
+	);
+
+	return 1;
+}
+
+sub install_binutils {
+	my $self = shift;
+
+	$self->install_binary(
+		name       => 'binutils',
+		license    => {
+			'Copying'     => 'binutils/Copying',
+			'Copying.lib' => 'binutils/Copying.lib',
+		},
+	);
+	$self->{bin_dlltool} = File::Spec->catfile(
+		$self->image_dir, 'c', 'bin', 'dlltool.exe',
+	);
+	unless ( -x $self->bin_dlltool ) {
+		die "Can't execute dlltool";
+	}
+
+	return 1;
+}
+
+sub install_pexports {
+	my $self = shift;
+
+	$self->install_binary(
+		name       => 'pexports',
+		url        => $self->binary_url('pexports-0.43-1.zip'),
+		license    => {
+			'pexports-0.43/COPYING' => 'pexports/COPYING',
+		},
+		install_to => {
+			'pexports-0.43/bin' => 'c/bin',
+		},
+	);
+	$self->{bin_pexports} = File::Spec->catfile(
+		$self->image_dir, 'c', 'bin', 'pexports.exe',
+	);
+	unless ( -x $self->bin_pexports ) {
+		die "Can't execute pexports";
+	}
+
+	return 1;
+}
+
+sub install_mingw_runtime {
+	my $self = shift;
+
+	$self->install_binary(
+		name       => 'mingw-runtime',
+		license    => {
+			'doc/mingw-runtime/Contributors' => 'mingw/Contributors',
+			'doc/mingw-runtime/Disclaimer'   => 'mingw/Disclaimer',
+		},
+	);
+
+	return 1;
+}
+
+sub install_win32api {
+	my $self = shift;
+
+	$self->install_binary(
+		name => 'w32api',
+	);
+
+	return 1;
+}
+
 sub install_libiconv {
 	my $self = shift;
 
 	# libiconv for win32 comes in 3 parts, install them.
 	$self->install_binary(
-		name       => 'iconv-dep',
-		share      => 'Perl-Dist-Downloads libiconv-1.9.2-1-dep.zip',
-		install_to => 'c',
+		name => 'libiconv-dep',
 	);
 	$self->install_binary(
-		name       => 'iconv-lib',
-		share      => 'Perl-Dist-Downloads libiconv-1.9.2-1-lib.zip',
-		install_to => 'c',
+		name => 'libiconv-lib',
 	);
 	$self->install_binary(
-		name       => 'iconv-bin',
-		share      => 'Perl-Dist-Downloads libiconv-1.9.2-1-bin.zip',
-		install_to => 'c',
+		name => 'libiconv-bin',
 	);
 
 	# The dll is installed with an unexpected name,
@@ -1169,7 +1445,7 @@ sub install_libxml {
 	# libxml is a straight forward pexport-based install
 	$self->install_library(
 		name       => 'libxml2',
-		share      => 'Perl-Dist-Downloads libxml2-2.6.30.win32.zip',
+		url        => $self->binary_url('libxml2-2.6.30.win32.zip'),
 		unpack_to  => 'libxml2',
 		build_a    => {
 			'dll'    => 'libxml2-2.6.30.win32/bin/libxml2.dll',
@@ -1195,7 +1471,11 @@ sub install_libxml {
 
 sub install_binary {
 	my $self   = shift;
-	my $binary = Perl::Dist::Asset::Binary->new(@_);
+	my $binary = Perl::Dist::Asset::Binary->new(
+		parent     => $self,
+		install_to => 'c', # Default to the C dir
+		@_,
+	);
 	my $name   = $binary->name;
 	$self->trace("Preparing $name\n");
 
@@ -1230,7 +1510,7 @@ sub install_binary {
 sub install_library {
 	my $self    = shift;
 	my $library = Perl::Dist::Asset::Library->new(
-		cpan => $self->cpan,
+		parent => $self,
 		@_,
 	);
 	my $name = $library->name;
@@ -1292,9 +1572,6 @@ sub install_library {
 		$self->_extract_filemap( $tgz, $library->license, $license_dir, 1 );
 	}
 
-	# Copy in the files
-	
-
 	return 1;
 }
 
@@ -1302,9 +1579,11 @@ sub install_library {
 sub install_distribution {
 	my $self = shift;
 	my $dist = Perl::Dist::Asset::Distribution->new(
-		cpan => $self->cpan,
+		parent => $self,
+		force  => $self->force,
 		@_,
 	);
+	my $name = $dist->name;
 
 	# Download the file
 	my $tgz = $self->_mirror( 
@@ -1313,10 +1592,10 @@ sub install_distribution {
 	);
 
 	# Where will it get extracted to
-	my $dist_path = $dist->name;
-	$dist_path =~ s/\.tar\.gz//;
-	$dist_path =~ s/\.zip//;
-	$dist_path =~ s/.+\///;
+	my $dist_path = $name;
+	$dist_path   =~ s/\.tar\.gz//;
+	$dist_path   =~ s/\.zip//;
+	$dist_path   =~ s/.+\///;
 	my $unpack_to = File::Spec->catdir( $self->build_dir, $dist_path );
 
 	# Extract the tarball
@@ -1340,18 +1619,18 @@ sub install_distribution {
 		}
 		local $ENV{AUTOMATED_TESTING} = $dist->automated_testing ? 1 : '';
 
-		$self->trace("Configuring " . $dist->name . "...\n");
-		$self->_perl( 'Makefile.PL' );
+		$self->trace("Configuring $name...\n");
+		$self->_perl( 'Makefile.PL', @{$dist->makefilepl_param} );
 
-		$self->trace("Building " . $dist->name . "...\n");
+		$self->trace("Building $name...\n");
 		$self->_make;
 
 		unless ( $dist->force ) {
-			$self->trace("Testing " . $dist->name . "\n");
+			$self->trace("Testing $name...\n");
 			$self->_make('test');
 		}
 
-		$self->trace("Installing " . $dist->name . "...\n");
+		$self->trace("Installing $name...\n");
 		$self->_make( qw/install UNINST=1/ );
 	}
 
@@ -1361,7 +1640,8 @@ sub install_distribution {
 sub install_module {
 	my $self   = shift;
 	my $module = Perl::Dist::Asset::Module->new(
-		cpan => $self->cpan,
+		force  => $self->force,
+		parent => $self,
 		@_,
 	);
 	my $name   = $module->name;
@@ -1373,7 +1653,7 @@ sub install_module {
 	# Generate the CPAN installation script
 	my $env_lib     = $self->get_env_lib;
 	my $env_include = $self->get_env_include;
-	my $cpan_str    = <<"END_PERL";
+	my $cpan_string = <<"END_PERL";
 print "Installing $name from CPAN...\n";
 my \$module = CPAN::Shell->expandany( "$name" ) 
 	or die "CPAN.pm couldn't locate $name";
@@ -1381,12 +1661,12 @@ if ( \$module->uptodate ) {
 	print "$name is up to date\n";
 	exit(0);
 }
-print "\\\$ENV{PATH}    = '\$ENV{PATH}'\n";
-print "\\\$ENV{LIB}     = '\$ENV{LIB}'\n";
-print "\\\$ENV{INCLUDE} = '\$ENV{INCLUDE}'\n";
+print "\\\$ENV{PATH}    = '\$ENV{PATH}'";
+print "\\\$ENV{LIB}     = '\$ENV{LIB}'";
+print "\\\$ENV{INCLUDE} = '\$ENV{INCLUDE}'";
 if ( $force ) {
-	local \$ENV{PERL_MM_USE_DEFAULT} = 1;
-	\$module->force("install");
+	\$module->force;
+	\$module->install;
 	\$CPAN::DEBUG=1;
 	unless ( \$module->uptodate ) {
 		die "Forced installation of $name appears to have failed";
@@ -1402,11 +1682,71 @@ if ( $force ) {
 exit(0);
 END_PERL
 
-	# Execute the CPAN installation script
+	# Dump the CPAN script to a temp file and execute
 	$self->trace("Running install of $name\n");
-	$self->_run3( $self->bin_perl, "-MCPAN", "-e", $cpan_str )
+	my $cpan_file = File::Spec->catfile(
+		$self->build_dir,
+		'cpan_string.pl',
+	);
+	SCOPE: {
+		open( CPAN_FILE, '>', $cpan_file ) or die "open: $!";
+		print CPAN_FILE $cpan_string       or die "print: $!";
+		close( CPAN_FILE )                 or die "close: $!";
+	}
+	$self->_run3( $self->bin_perl, "-MCPAN", $cpan_file )
 		or die "perl -MCPAN -e failed";
 	die "Failure detected installing $name, stopping" if $?;
+
+	return 1;
+}
+
+sub install_par {
+	my $self = shift;
+	my $par  = Perl::Dist::Asset::PAR->new(
+		parent     => $self,
+		# not supported at the moment:
+		#install_to => 'c', # Default to the C dir
+		@_,
+	);
+	my $name = $par->name;
+
+	# Download the file.
+	# Do it here for consistency, instead of letting PAR::Dist do it
+	$self->trace("Preparing $name\n");
+	my $file = $self->_mirror( 
+		$par->url,
+		$self->download_dir,
+	);
+
+
+	# set the appropriate installation paths
+	my $perldir  = File::Spec->catdir($self->image_dir, 'perl');
+
+	my $libdir = File::Spec->catdir($perldir, 'site', 'lib');
+	my $bindir = File::Spec->catdir($perldir, 'bin');
+	my $no_colon_name = $name;
+	$no_colon_name =~ s/::/-/g;
+	my $packlist = File::Spec->catfile($libdir, $no_colon_name, '.packlist');
+	my $cdir     = File::Spec->catdir($self->image_dir, 'c');
+
+	# install
+	PAR::Dist::install_par(
+		dist           => $file,
+		inst_lib       => $libdir,
+		inst_archlib   => $libdir,
+		inst_bin       => $bindir,
+		inst_script    => $bindir,
+		inst_man1dir   => undef, # no man pages
+		inst_man3dir   => undef,
+		packlist_read  => $packlist,
+		packlist_write => $packlist,
+		custom_targets =>  {
+			'blib/c/lib'     => File::Spec->catdir($cdir, 'lib'),
+			'blib/c/bin'     => File::Spec->catdir($cdir, 'bin'),
+			'blib/c/include' => File::Spec->catdir($cdir, 'include'),
+			'blib/c/share'   => File::Spec->catdir($cdir, 'share'),
+		},
+	);
 
 	return 1;
 }
@@ -1414,7 +1754,7 @@ END_PERL
 sub install_file {
 	my $self = shift;
 	my $dist = Perl::Dist::Asset::File->new(
-		cpan => $self->cpan,
+		parent => $self,
 		@_,
 	);
 
@@ -1437,7 +1777,10 @@ sub install_file {
 
 sub install_launcher {
 	my $self     = shift;
-	my $launcher = Perl::Dist::Asset::Launcher->new(@_);
+	my $launcher = Perl::Dist::Asset::Launcher->new(
+		parent => $self,
+		@_,
+	);
 
 	# Check the script exists
 	my $to = File::Spec->catfile( $self->image_dir, 'perl', 'bin', $launcher->bin . '.bat' );
@@ -1456,16 +1799,20 @@ sub install_launcher {
 
 sub install_website {
 	my $self    = shift;
-	my $website = Perl::Dist::Asset::Website->new(@_);
+	my $website = Perl::Dist::Asset::Website->new(
+		parent => $self,
+		@_,
+	);
 
 	# Write the file directly to the image
-	my $to = File::Spec->catfile( $self->image_dir, $website->file );
-	$website->write( $to );
+	$website->write(
+		File::Spec->catfile($self->image_dir, $website->file)
+	);
 
 	# Add the file to the files section of the inno script
 	$self->add_file(
-		source     => $website->file,
-		dest_dir   => '{app}',
+		source   => $website->file,
+		dest_dir => '{app}',
 	);
 
 	# Add the file to the icons section of the inno script
@@ -1680,7 +2027,7 @@ sub _mirror {
 	File::Path::mkpath($dir);
 	$| = 1;
 
-	$self->trace("Downloading $file...\n");
+	$self->trace("Downloading $url...\n");
 	my $ua = LWP::UserAgent->new;
 	my $r  = $ua->mirror( $url, $target );
 	if ( $r->is_error ) {
@@ -1699,7 +2046,23 @@ sub _copy {
 	my $basedir = File::Basename::dirname( $to );
 	File::Path::mkpath($basedir) unless -e $basedir;
 	$self->trace("Copying $from to $to\n");
-	File::Copy::Recursive::rcopy( $from, $to ) or die $!;
+	if ( -f $to and ! -w $to ) {
+		require Win32::File::Object;
+
+		# Make sure it isn't readonly
+		my $file     = Win32::File::Object->new( $to, 1 );
+		my $readonly = $file->readonly;
+		$file->readonly(0);
+
+		# Do the actual copy
+		File::Copy::Recursive::rcopy( $from, $to ) or die $!;
+
+		# Set it back to what it was
+		$file->readonly($readonly);
+	} else {
+		File::Copy::Recursive::rcopy( $from, $to ) or die $!;
+	}
+	return 1;
 }
 
 sub _move {

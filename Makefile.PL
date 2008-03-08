@@ -22,19 +22,21 @@ requires       'Object::Tiny'          => '1.02';
 requires       'Tie::File'             => 0;
 requires       'YAML::Tiny'            => '1.12';
 requires       'Module::CoreList'      => '2.13';
+requires       'Params::Util'          => '0.25';
 requires       'CPAN'                  => 0;
-requires       'Perl::Dist::Downloads' => '0.05';
+requires       'PAR::Dist'             => '0.25';
 requires       'Process'               => '0.20';
 requires       'Process::Storable'     => 0;
 requires       'Process::Delegatable'  => 0;
 requires       'IO::Capture'           => '0.05';
+requires       'Win32::File::Object'   => '0.01' if $^O eq 'MSWin32';
 build_requires 'Test::More'            => '0.42';
 build_requires 'Test::Script'          => '1.02';
 build_requires 'Test::LongString'      => 0;
 build_requires 'Probe::Perl'           => '0.01';
 install_script 'script/perldist';
+no_index       'directory'             => 'share';
 install_share;
-no_index( directory => 'share' );
 
 WriteAll;
 

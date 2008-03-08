@@ -39,11 +39,12 @@ requires:
   LWP::UserAgent: 2.033
   Module::CoreList: 2.13
   Object::Tiny: 1.02
-  Perl::Dist::Downloads: 0.05
+  PAR::Dist: 0.25
+  Params::Util: 0.25
   Process: 0.20
   Process::Delegatable: 0
   Process::Storable: 0
   Tie::File: 0
   YAML::Tiny: 1.12
   perl: 5.6.0
-version: 0.90_02
+version: 0.90_03

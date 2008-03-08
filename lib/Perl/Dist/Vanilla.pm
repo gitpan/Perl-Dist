@@ -7,7 +7,27 @@ use base 'Perl::Dist';
 
 use vars qw{$VERSION};
 BEGIN {
-	$VERSION = '14';
+	$VERSION = '15';
+}
+
+
+
+
+
+#####################################################################
+# Upstream Binary Packages
+
+my %PACKAGES = (
+	# Disabled as the generate test failures in 5.10.0
+	# 'mingw-runtime' => 'mingw-runtime-3.14.tar.gz',
+	# 'w32api'        => 'w32api-3.11.tar.gz',
+	'dmake'         => 'dmake-4.11-20080107-SHAY.zip',
+	'expat'         => 'expat-2.0.1-vanilla.zip',
+);
+
+sub binary_file {
+	$PACKAGES{$_[1]} or
+	shift->SUPER::binary_file(@_);
 }
 
 
@@ -23,11 +43,11 @@ sub new {
 
 	# Prepend defaults
 	my $self = $class->SUPER::new(
-		app_id               => 'vanillaperl',
-		app_name             => 'Vanilla Perl',
-		app_publisher        => 'Vanilla Perl Project',
-		app_publisher_url    => 'http://vanillaperl.org/',
-		image_dir            => 'C:\\vanilla',
+		app_id            => 'vanillaperl',
+		app_name          => 'Vanilla Perl',
+		app_publisher     => 'Vanilla Perl Project',
+		app_publisher_url => 'http://vanillaperl.org/',
+		image_dir         => 'C:\\vanilla',
 		@_,
 	);
 
@@ -53,13 +73,42 @@ sub output_base_filename {
 #####################################################################
 # Installation Script
 
-sub install_perl_5110 {
+sub install_c_libraries {
 	my $self = shift;
-	$self->SUPER::install_perl(@_);
+	$self->SUPER::install_c_libraries(@_);
 
-	# Overwrite the default stub CPAN config with a Vanilla one.
-	# This is just there so that we at least have a working CPAN
-	# mirror setup by default.
+	return 1;
+}
+
+sub install_expat {
+	my $self = shift;
+
+	#$self->install_binary(
+	#	name => 'expat',
+	#);
+
+	# Install the PAR version of libexpat
+	$self->install_par(
+		name  => 'libexpat',
+		share => 'Perl-Dist vanilla/libexpat-vanilla.par',
+	);
+
+	return 1;
+}
+
+sub install_perl_5100_bin {
+	my $self  = shift;
+	$self->SUPER::install_perl_5100_bin(@_);
+
+	# Overwrite the CPAN config to be relocatable
+	$self->install_file(
+		share      => 'Perl-Dist vanilla/Config5100.pm',
+		install_to => 'perl/lib/Config.pm',
+	);
+	$self->install_file(
+		share      => 'Perl-Dist vanilla/Config_heavy5100.pl',
+		install_to => 'perl/lib/Config_heavy.pl',
+	);
 	$self->install_file(
 		share      => 'Perl-Dist vanilla/CPAN_Config.pm',
 		install_to => 'perl/lib/CPAN/Config.pm',
@@ -68,9 +117,42 @@ sub install_perl_5110 {
 	return 1;
 }
 
+sub install_perl_modules {
+	my $self = shift;
+	$self->SUPER::install_perl_modules(@_);
+
+	$self->install_module(
+		name  => 'Win32::File',
+		force => 1,
+	);
+	$self->install_module(
+		name => 'Win32::API',
+	);
+
+	# We want expat as well
+	$self->install_expat;
+
+	# Install XML::Parser
+	$self->install_distribution(
+		name             => 'MSERGEANT/XML-Parser-2.36.tar.gz',
+		makefilepl_param => [
+			'EXPATLIBPATH=' . File::Spec->catdir(
+				$self->image_dir, 'c', 'lib',
+			),
+			'EXPATINCPATH=' . File::Spec->catdir(
+				$self->image_dir, 'c', 'include',
+			),
+		],
+	);
+
+	return 1;
+}
+
 1;
 
 __END__
+
+=pod
 
 =head1 NAME
 
