@@ -23,12 +23,14 @@ it should be pretty clear.
 
 use 5.005;
 use strict;
-use Carp         'croak';
-use Params::Util qw{ _STRING _IDENTIFIER _ARRAY _HASH _DRIVER };
+use Carp          'croak';
+use File::Copy    ();
+use Params::Util  qw{ _STRING _IDENTIFIER _ARRAY0 _HASH0 _DRIVER };
+use File::HomeDir ();
 
 use vars qw{$VERSION};
 BEGIN {
-	$VERSION = '0.90_03';
+	$VERSION = '1.00';
 }
 
 use Object::Tiny qw{
@@ -59,16 +61,20 @@ sub new {
 	unless ( _DRIVER($self->class, 'Perl::Dist::Inno') ) {
 		croak("Missing or invalid class param");
 	}
+	unless ( defined $self->output ) {
+		$self->{output} = File::HomeDir->my_desktop;
+	}
 	unless ( _STRING($self->output) ) {
 		croak("Missing or invalid output param");
 	}
 	unless ( -d $self->output and -w $self->output ) {
-		croak("The output directory does not exist, or is not writable");
+		my $output = $self->output;
+		croak("The output directory '$output' does not exist, or is not writable");
 	}
-	if ( _HASH($self->{common}) ) {
+	if ( _HASH0($self->{common}) ) {
 		$self->{common} = [ %{ $self->{common} } ];
 	}
-	unless ( _ARRAY($self->{common}) ) {
+	unless ( _ARRAY0($self->{common}) ) {
 		croak("Did not provide a common param");
 	}
 
@@ -198,6 +204,15 @@ sub run {
 	while ( my $dist = $self->next ) {
 		$dist->prepare;
 		$dist->run;
+
+		# Copy the output products for this run to the
+		# main output area.
+		foreach my $file ( @{$dist->output_file} ) {
+			File::Copy::move( $file, $self->output );
+		}
+
+		# Flush out the image dir for the next run
+		File::Remove::remove(\1, $dist->image_dir);
 	}
 	return 1;
 }

@@ -1,26 +1,28 @@
---- 
-abstract: Perl Distribution Creation Toolkit
-author: 
-  - Adam Kennedy <adamk@cpan.org>
-build_requires: 
+---
+abstract: 'Perl Distribution Creation Toolkit'
+author:
+  - 'Adam Kennedy <adamk@cpan.org>'
+build_requires:
   ExtUtils::MakeMaker: 6.11
   Probe::Perl: 0.01
   Test::LongString: 0
   Test::More: 0.42
   Test::Script: 1.02
 distribution_type: module
-generated_by: Module::Install version 0.68
+generated_by: 'Module::Install version 0.71'
 license: perl
-meta-spec: 
+meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.3.html
   version: 1.3
 name: Perl-Dist
-no_index: 
-  directory: 
+no_index:
+  directory:
+    - share
+    - share
     - share
     - inc
     - t
-requires: 
+requires:
   Archive::Tar: 1.34
   Archive::Zip: 1.20
   CPAN: 0
@@ -37,6 +39,7 @@ requires:
   IPC::Run3: 0.034
   LWP::Online: 0.03
   LWP::UserAgent: 2.033
+  LWP::UserAgent::Determined: 0
   Module::CoreList: 2.13
   Object::Tiny: 1.02
   PAR::Dist: 0.25
@@ -47,4 +50,4 @@ requires:
   Tie::File: 0
   YAML::Tiny: 1.12
   perl: 5.6.0
-version: 0.90_03
+version: 1.00

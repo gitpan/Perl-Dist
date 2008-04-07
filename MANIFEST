@@ -5,7 +5,6 @@ inc/Module/Install/Can.pm
 inc/Module/Install/Fetch.pm
 inc/Module/Install/Makefile.pm
 inc/Module/Install/Metadata.pm
-inc/Module/Install/Scripts.pm
 inc/Module/Install/Share.pm
 inc/Module/Install/Win32.pm
 inc/Module/Install/WriteAll.pm
@@ -26,6 +25,7 @@ lib/Perl/Dist/Inno/File.pm
 lib/Perl/Dist/Inno/Icon.pm
 lib/Perl/Dist/Inno/Registry.pm
 lib/Perl/Dist/Inno/Script.pm
+lib/Perl/Dist/Inno/System.pm
 lib/Perl/Dist/Machine.pm
 lib/Perl/Dist/Util/Toolchain.pm
 lib/Perl/Dist/Vanilla.pm
@@ -36,6 +36,7 @@ META.yml
 README
 script/perldist
 share/CPAN_Config.pm
+share/ExtUtils_Command5100.pm
 share/ExtUtils_Install588.pm
 share/ExtUtils_Installed588.pm
 share/ExtUtils_Packlist588.pm
@@ -58,6 +59,8 @@ t/12_perl_5100.t
 t/13_boot_new.t
 t/14_vanilla_new.t
 t/15_machine.t
+t/16_inno_system.t
+t/17_inno_distribution.t
 t/97_meta.t
 t/98_pod.t
 t/99_pmv.t
