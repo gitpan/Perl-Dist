@@ -50,4 +50,4 @@ requires:
   Tie::File: 0
   YAML::Tiny: 1.12
   perl: 5.6.0
-version: 1.00
+version: 1.01

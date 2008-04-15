@@ -59,11 +59,12 @@ use URI::file;
 
 use vars qw{$VERSION};
 BEGIN {
-	$VERSION = '1.00';
+	$VERSION = '1.01';
 }
 
 use Object::Tiny qw{
 	name
+	inject
 	force
 	automated_testing
 	makefilepl_param
@@ -145,6 +146,11 @@ sub new {
 	# Check params
 	unless ( _DIST($self->name) ) {
 		croak("Missing or invalid name param");
+	}
+	if ( defined $self->inject ) {
+		unless ( _INSTANCE($self->inject, 'URI') ) {
+			croak("The inject param must be a fully resolved URI");
+		}
 	}
 	if ( defined $self->makefilepl_param and ! _ARRAY($self->makefilepl_param) ) {
 		croak("Invalid makefilepl_param param");
