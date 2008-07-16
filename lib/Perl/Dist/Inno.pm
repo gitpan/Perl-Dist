@@ -144,16 +144,23 @@ use LWP::UserAgent::Determined ();
 use LWP::Online                ();
 use Module::CoreList           ();
 use Tie::File                  ();
+use Tie::Slurp                 ();
 use PAR::Dist                  ();
+use Perl::Dist::Inno::Script   ();
 
-use base 'Perl::Dist::Inno::Script';
-
-use vars qw{$VERSION};
+use vars qw{$VERSION @ISA};
 BEGIN {
-        $VERSION  = '1.01';
+        $VERSION  = '1.02';
+	@ISA      = 'Perl::Dist::Inno::Script';
 }
 
 use Object::Tiny qw{
+	perl_version
+	portable
+	archlib
+	exe
+	zip
+
 	binary_root
 	offline
 	download_dir
@@ -163,9 +170,6 @@ use Object::Tiny qw{
 	build_dir
 	iss_file
 	user_agent
-	perl_version
-	perl_version_corelist
-	cpan
 	bin_perl
 	bin_make
 	bin_pexports
@@ -176,9 +180,9 @@ use Object::Tiny qw{
 	debug_stdout
 	debug_stderr
 	output_file
+	perl_version_corelist
+	cpan
 	force
-	exe
-	zip
 };
 
 use Perl::Dist::Inno                ();
@@ -203,8 +207,8 @@ use Perl::Dist::Util::Toolchain     ();
 
 my %PACKAGES = (
 	'dmake'         => 'dmake-4.8-20070327-SHAY.zip',
-	'gcc-core'      => 'gcc-core-3.4.5-20060117-1.tar.gz',
-	'gcc-g++'       => 'gcc-g++-3.4.5-20060117-1.tar.gz',
+	'gcc-core'      => 'gcc-core-3.4.5-20060117-3.tar.gz',
+	'gcc-g++'       => 'gcc-g++-3.4.5-20060117-3.tar.gz',
 	'mingw-make'    => 'mingw32-make-3.81-2.tar.gz',
 	'binutils'      => 'binutils-2.17.50-20060824-1.tar.gz',
 	'mingw-runtime' => 'mingw-runtime-3.13.tar.gz',
@@ -307,12 +311,26 @@ If you are online and no C<cpan> param is provided, the value will
 default to the L<http://cpan.strawberryperl.com> repository as a
 convenience.
 
+=item portable
+
+The optional boolean C<portable> param is used to indicate that the
+distribution is intended for installation on a portable storable
+device.
+
+=item exe
+
+The optional boolean C<zip> param is used to indicate that a zip
+distribution package should be created.
+
+=item zip
+
+The optional boolean C<exe> param is used to indicate that an
+InnoSetup executable installer should be created.
+
 =back
 
 The C<new> constructor returns a B<Perl::Dist> object, which you
 should then call C<run> on to generate the distribution.
-
-TO BE CONTINUED
 
 =cut
 
@@ -425,8 +443,10 @@ sub new {
 	$self->{offline}      = !! $self->offline;
 	$self->{trace}        = !! $self->{trace};
 	$self->{force}        = !! $self->force;
+	$self->{portable}     = !! $self->portable;
 	$self->{exe}          = !! $self->exe;
 	$self->{zip}          = !! $self->zip;
+	$self->{archlib}      = !! $self->archlib;
 
 	# If we are online and don't have a cpan repository,
 	# use cpan.strawberryperl.com as a default.
@@ -818,22 +838,43 @@ sub remove_waste {
 	my $self = shift;
 
 	$self->trace("Removing doc, man, info and html documentation...\n");
-	File::Remove::remove( \1, $self->_dir('perl', 'man')     );
-	File::Remove::remove( \1, $self->_dir('perl', 'html')    );
-	File::Remove::remove( \1, $self->_dir('c',    'man')     );
-	File::Remove::remove( \1, $self->_dir('c',    'doc')     );
-	File::Remove::remove( \1, $self->_dir('c',    'info')    );
+	$self->remove_dir(qw{ perl man       });
+	$self->remove_dir(qw{ perl html      });
+	$self->remove_dir(qw{ c    man       });
+	$self->remove_dir(qw{ c    doc       });
+	$self->remove_dir(qw{ c    info      });
+	$self->remove_dir(qw{ c    contrib   });
+	$self->remove_dir(qw{ c    html      });
 
-	$self->trace("Removing C library manifests...\n");
-	File::Remove::remove( \1, $self->_dir('c', 'manifest')   );
+	$self->trace("Removing C examples, manifests...\n");
+	$self->remove_dir(qw{ c    examples  });
+	$self->remove_dir(qw{ c    manifest  });
+
+	$self->trace("Removing redundant license files...\n");
+	$self->remove_file(qw{ c COPYING     });
+	$self->remove_file(qw{ c COPYING.LIB });
 
 	$self->trace("Removing CPAN build directories and download caches...\n");
-	File::Remove::remove( \1, $self->_dir('cpan', 'sources') );
-	File::Remove::remove( \1, $self->_dir('cpan', 'build')   );
+	$self->remove_dir(qw{ cpan sources  });
+	$self->remove_dir(qw{ cpan build    });
 
 	return 1;
 }
 
+sub remove_dir {
+	my $self = shift;
+	my $dir  = $self->dir( @_ );
+	File::Remove::remove( \1, $dir ) if -e $dir;
+	return 1;
+}
+
+sub remove_file {
+	my $self = shift;
+	my $file = $self->file( @_ );
+	File::Remove::remove( \1, $file ) if -e $file;
+	return 1;
+}
+		
 
 
 
@@ -901,7 +942,7 @@ sub install_perl_588_bin {
 	my $patch = $perl->patch;
 	if ( $patch ) {
 		foreach my $f ( sort keys %$patch ) {
-			my $from = File::ShareDir::module_file( 'Perl::Dist', $f );
+			my $from = File::ShareDir::dist_file( 'Perl-Dist', $f );
 			my $to   = File::Spec->catfile(
 				$unpack_to, $perlsrc, $patch->{$f},
 			);
@@ -925,21 +966,13 @@ sub install_perl_588_bin {
 		my $image_dir    = $self->image_dir;
 		my $perl_install = File::Spec->catdir( $self->image_dir, $perl->install_to );
 		my (undef,$short_install) = File::Spec->splitpath( $perl_install, 1 );
+
 		$self->trace("Patching makefile.mk\n");
-		tie my @makefile, 'Tie::File', 'makefile.mk'
+		tie my $makefile, 'Tie::Slurp', 'makefile.mk'
 			or die "Couldn't read makefile.mk";
-		for ( @makefile ) {
-			if ( m{\AINST_TOP\s+\*=\s+} ) {
-				s{\\perl}{$short_install}; # short has the leading \
-
-			} elsif ( m{\ACCHOME\s+\*=} ) {
-				s{c:\\mingw}{$image_dir\\c}i;
-
-			} else {
-				next;
-			}
-		}
-		untie @makefile;
+		$makefile =~ s/(\nINST_TOP\s+\*=\s+.+?)\\perl\b/$1$short_install/;
+		$makefile =~ s/(\nCCHOME\s+\*=\s+)C\:\\MinGW\b/$1$image_dir\\c/;
+		untie $makefile;
 
 		$self->trace("Building perl...\n");
 		$self->_make;
@@ -1142,7 +1175,7 @@ sub install_perl_5100_bin {
 	my $patch = $perl->patch;
 	if ( $patch ) {
 		foreach my $f ( sort keys %$patch ) {
-			my $from = File::ShareDir::module_file( 'Perl::Dist', $f );
+			my $from = File::ShareDir::dist_file( 'Perl-Dist', $f );
 			my $to   = File::Spec->catfile(
 				$unpack_to, $perlsrc, $patch->{$f},
 			);
@@ -1258,7 +1291,7 @@ sub install_perl_5100_toolchain_object {
 	Perl::Dist::Util::Toolchain->new(
 		perl_version => $_[0]->perl_version_literal,
 		force        => {
-			'ExtUtils::CBuilder' => 'KWILLIAMS/ExtUtils-CBuilder-0.21.tar.gz',
+			'File::Path' => 'DLAND/File-Path-2.04.tar.gz',
 		},
 	);
 }
@@ -1670,6 +1703,27 @@ sub install_gmp {
 
 	return 1;
 }
+
+=pod
+
+=head2 install_pari
+
+  $dist->install_pari
+
+The C<install_pari> method install (via a PAR package) libpari and the
+L<Math::Pari> module into the distribution.
+
+This method should only be called at during the install_modules phase.
+
+=cut
+
+sub install_pari {
+	$_[0]->install_par(
+		name => 'pari',
+		url  => 'http://strawberryperl.com/package/Math-Pari-2.010800.par',
+	);
+}
+
 
 
 
@@ -2526,8 +2580,12 @@ sub trace {
 	return 1;
 }
 
-sub _dir {
+sub dir {
 	File::Spec->catdir( shift->image_dir, @_ );
+}
+
+sub file {
+	File::Spec->catfile( shift->image_dir, @_ );
 }
 
 sub _mirror {
@@ -2778,3 +2836,33 @@ sub _dll_to_a {
 }
 
 1;
+
+=pod
+
+=head1 SUPPORT
+
+Bugs should be reported via the CPAN bug tracker
+
+L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=Perl-Dist>
+
+For other issues, or commercial enhancement or support, contact the author.
+
+=head1 AUTHOR
+
+Adam Kennedy E<lt>adamk@cpan.orgE<gt>
+
+=head1 SEE ALSO
+
+L<Perl::Dist>, L<http://ali.as/>
+
+=head1 COPYRIGHT
+
+Copyright 2008 Adam Kennedy.
+
+This program is free software; you can redistribute
+it and/or modify it under the same terms as Perl itself.
+
+The full text of the license can be found in the
+LICENSE file included with this module.
+
+=cut

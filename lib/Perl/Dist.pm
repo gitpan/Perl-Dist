@@ -2,11 +2,12 @@ package Perl::Dist;
 
 use 5.006;
 use strict;
-use base 'Perl::Dist::Inno';
+use Perl::Dist::Inno ();
 
-use vars qw{$VERSION};
+use vars qw{$VERSION @ISA};
 BEGIN {
-        $VERSION = '1.01';
+        $VERSION = '1.02';
+	@ISA     = 'Perl::Dist::Inno';
 }
 
 1;
@@ -112,7 +113,13 @@ Better uninstall support and upgradability.
 
 =back
 
-=head1 AUTHOR
+=head1 SUPPORT
+
+Bugs should be reported via the CPAN bug tracker at
+
+L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=Perl-Dist>
+
+=head1 AUTHORS
 
 Adam Kennedy <adamk@cpan.org>
 

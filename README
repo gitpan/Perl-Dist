@@ -68,7 +68,12 @@ ROADMAP
 
     *   Better uninstall support and upgradability.
 
-AUTHOR
+SUPPORT
+    Bugs should be reported via the CPAN bug tracker at
+
+    <http://rt.cpan.org/NoAuth/ReportBug.html?Queue=Perl-Dist>
+
+AUTHORS
     Adam Kennedy <adamk@cpan.org>
 
     David A. Golden <dagolden@cpan.org>
