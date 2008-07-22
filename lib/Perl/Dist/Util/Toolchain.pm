@@ -13,7 +13,7 @@ use base 'Process::Delegatable',
 
 use vars qw{$VERSION @DELEGATE};
 BEGIN {
-	$VERSION  = '1.02';
+	$VERSION  = '1.03';
 	@DELEGATE = ();
 }
 
@@ -140,14 +140,15 @@ sub prepare {
 	CPAN->import();
 
 	# Load the latest index
-	SCOPE: {
+	eval {
 		local $SIG{__WARN__} = sub { 1 };
 		CPAN::Index->reload;
-	}
+	};
 
 	$stdout->stop;
 	$stderr->stop;
-	return 1;
+
+	return $@ ? '' : 1;
 }
 
 sub run {
