@@ -40,6 +40,7 @@ share/ExtUtils_Command5100.pm
 share/ExtUtils_Install588.pm
 share/ExtUtils_Installed588.pm
 share/ExtUtils_Packlist588.pm
+share/MM_Win32_644.pm
 share/vanilla/Config5100.pm
 share/vanilla/Config_heavy5100.pl
 share/vanilla/CPAN_Config.pm

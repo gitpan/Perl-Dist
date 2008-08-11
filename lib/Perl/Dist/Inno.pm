@@ -146,11 +146,12 @@ use Module::CoreList           ();
 use Tie::File                  ();
 use Tie::Slurp                 ();
 use PAR::Dist                  ();
+use Portable::Dist             ();
 use Perl::Dist::Inno::Script   ();
 
 use vars qw{$VERSION @ISA};
 BEGIN {
-        $VERSION  = '1.03';
+        $VERSION  = '1.04';
 	@ISA      = 'Perl::Dist::Inno::Script';
 }
 
@@ -448,6 +449,12 @@ sub new {
 	$self->{zip}          = !! $self->zip;
 	$self->{archlib}      = !! $self->archlib;
 
+	# Handle portable special cases
+	if ( $self->portable ) {
+		$self->{zip} = 1;
+		$self->{exe} = 0;
+	}
+
 	# If we are online and don't have a cpan repository,
 	# use cpan.strawberryperl.com as a default.
 	if ( ! $self->offline and ! $self->cpan ) {
@@ -719,7 +726,25 @@ sub run {
 	$self->remove_waste;
 	$self->trace("Completed remove_waste in " . (time - $t) . " seconds\n");
 
-	# Write out the exe
+	# Install any extra custom software on top of Perl.
+	# This is primarily added for the benefit of Parrot.
+	$self->install_custom;
+
+	# Apply portability if needed
+	if ( $self->portable ) {
+		# Create the portability object
+		$self->trace("Creating Portable::Dist\n");
+		$self->{portable_dist} = Portable::Dist->new(
+			perl_root => File::Spec->catdir(
+				$self->image_dir => 'perl',
+			),
+		);
+		$self->trace("Running Portable::Dist\n");
+		$self->{portable_dist}->run;
+		$self->trace("Completed Portable::Dist\n");
+	}
+
+	# Write out the distributions
 	$t = time;
 	my $exe = $self->write;
 	$self->trace("Completed write in " . (time - $t) . " seconds\n");
@@ -730,6 +755,29 @@ sub run {
 		$self->trace("Created distribution $file\n");
 	}
 
+	return 1;
+}
+
+=pod
+
+=head2 install_custom
+
+The C<install_custom> method is an empty install stub provided
+to allow sub-classed distributions to add B<vastly> different
+additional packages on top of Strawberry Perl.
+
+For example, this class is used by the Parrot distribution builder
+(which needs to sit on a full Strawberry install).
+
+Notably, the C<install_custom> method AFTER C<remove_waste>, so that the
+file deletion logic in C<remove_waste> won't accidntally delete files that
+may result in a vastly more damaging effect on the custom software.
+
+Returns true, or throws an error on exception.
+
+=cut
+
+sub install_custom {
 	return 1;
 }
 
@@ -1030,12 +1078,22 @@ sub install_perl_588_toolchain {
 			# so testing cannot be automated.
 			$automated_testing = 1;
 		}
+		if ( $dist =~ /libwww/ ) {
+			# Tests break behind a proxy, so force them
+			$force = 1;
+		}
 		$self->install_distribution(
 			name              => $dist,
 			force             => $force,
 			automated_testing => $automated_testing,
 		);
 	}
+
+	# Patch MakeMaker to avoid a bug with explicit dmake
+	$self->install_file(
+		share      => 'Perl-Dist MM_Win32_644.pm',
+		install_to => 'perl/lib/ExtUtils/MM_Win32.pm',
+	);
 
 	# With the toolchain we need in place, install the default
 	# configuation.
@@ -1277,12 +1335,22 @@ sub install_perl_5100_toolchain {
 			# so testing cannot be automated.
 			$automated_testing = 1;
 		}
+		if ( $dist =~ /libwww/ ) {
+			# Tests break behind a proxy, so force them
+			$force = 1;
+		}
 		$self->install_distribution(
 			name              => $dist,
 			force             => $force,
 			automated_testing => $automated_testing,
 		);
 	}
+
+	# Patch MakeMaker to avoid a bug with explicit dmake
+	$self->install_file(
+		share      => 'Perl-Dist MM_Win32_644.pm',
+		install_to => 'perl/lib/ExtUtils/MM_Win32.pm',
+	);
 
 	return 1;
 }

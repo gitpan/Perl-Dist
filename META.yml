@@ -9,7 +9,7 @@ build_requires:
   Test::More: 0.42
   Test::Script: 1.02
 distribution_type: module
-generated_by: 'Module::Install version 0.76'
+generated_by: 'Module::Install version 0.77'
 license: perl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
@@ -44,6 +44,7 @@ requires:
   Object::Tiny: 1.02
   PAR::Dist: 0.25
   Params::Util: 0.25
+  Portable::Dist: 0.02
   Process: 0.20
   Process::Delegatable: 0
   Process::Storable: 0
@@ -53,4 +54,4 @@ requires:
   perl: 5.6.0
 resources:
   license: http://dev.perl.org/licenses/
-version: 1.03
+version: 1.04
