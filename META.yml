@@ -4,9 +4,9 @@ author:
   - 'Adam Kennedy <adamk@cpan.org>'
 build_requires:
   ExtUtils::MakeMaker: 6.11
-  Test::LongString: 0
-  Test::More: 0.42
-  Test::Script: 1.02
+  Test::LongString: 0.11
+  Test::More: 0.80
+  Test::Script: 1.03
 distribution_type: module
 generated_by: 'Module::Install version 0.77'
 license: perl
@@ -22,39 +22,36 @@ no_index:
     - inc
     - t
 requires:
-  Archive::Tar: 1.34
-  Archive::Zip: 1.20
+  Archive::Tar: 1.38
+  Archive::Zip: 1.25
   CPAN: 1.9205
-  File::Copy::Recursive: 0.25
+  File::Copy::Recursive: 0.37
   File::Find::Rule: 0.30
-  File::Path: 1.08
-  File::PathList: 0
-  File::Remove: 0.37
-  File::ShareDir: 0.99
-  File::Spec: 3.17
+  File::Path: 2.04
+  File::PathList: 1.04
+  File::Remove: 1.42
+  File::ShareDir: 1.00
+  File::Spec: 3.2701
   File::Temp: 0.20
-  File::pushd: 0.32
-  HTTP::Status: 1.28
+  File::pushd: 1.00
+  HTTP::Status: 5.817
   IO::Capture: 0.05
-  IPC::Run3: 0.034
-  LWP::Online: 0.03
-  LWP::UserAgent: 2.033
-  LWP::UserAgent::Determined: 0
-  Module::CoreList: 2.13
-  Object::Tiny: 1.02
-  PAR::Dist: 0.25
-  Params::Util: 0.25
+  IPC::Run3: 0.042
+  LWP::Online: 1.07
+  LWP::UserAgent: 5.817
+  LWP::UserAgent::Determined: 1.03
+  Module::CoreList: 2.15
+  Object::Tiny: 1.06
+  PAR::Dist: 0.37
+  Params::Util: 0.33
   Portable::Dist: 0.02
   Probe::Perl: 0.01
-  Process: 0.20
-  Process::Delegatable: 0
-  Process::Storable: 0
+  Process: 0.22
+  Process::Delegatable: 0.22
+  Process::Storable: 0.22
   Template: 2.20
-  Tie::File: 0
-  Tie::Slurp: 0.03
-  YAML::Tiny: 1.12
-  blib: 0
+  YAML::Tiny: 1.32
   perl: 5.6.0
 resources:
   license: http://dev.perl.org/licenses/
-version: 1.05_01
+version: 1.05_02
