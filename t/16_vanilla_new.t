@@ -12,15 +12,11 @@ BEGIN {
 		plan( skip_all => 'Not on Win32' );
 		exit(0);
 	}
-	unless ( $ENV{TEST_PERLDIST_ALL} ) {
-		plan( skip_all => 'Skipping potentially destructive test' );
-		exit(0);
-	}
-	plan( tests => 3 );
+	plan( tests => 5 );
 }
 
 use File::Spec::Functions ':ALL';
-use Perl::Dist::Bootstrap ();
+use Perl::Dist::Vanilla   ();
 use URI::file             ();
 
 sub cpan_uri {
@@ -37,9 +33,9 @@ sub cpan_uri {
 #####################################################################
 # Constructor Test
 
-my $dist = Perl::Dist::Bootstrap->new(
+my $dist = Perl::Dist::Vanilla->new(
 	cpan => cpan_uri(),
 );
-isa_ok( $dist, 'Perl::Dist::Bootstrap' );
-
-1;
+isa_ok( $dist, 'Perl::Dist::Vanilla' );
+is( ref($dist->patch_include_path), 'ARRAY', '->patch_include_path ok' );
+is( scalar(@{$dist->patch_include_path}), 2, 'Two include path entries' );

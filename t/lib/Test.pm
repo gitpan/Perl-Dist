@@ -10,10 +10,11 @@ use File::Remove  ();
 use t::lib::Test1 ();
 use t::lib::Test2 ();
 use t::lib::Test3 ();
+use t::lib::Test4 ();
 
 use vars qw{$VERSION};
 BEGIN {
-	$VERSION = '1.04';
+	$VERSION = '1.05_01';
 }
 
 
@@ -39,11 +40,14 @@ sub remake_path {
 }
 
 sub paths {
-	# Prepare the test directories
-	my $output_dir   = remake_path( "C:\\tmp\\sp\\output"   );
-	my $image_dir    = remake_path( "C:\\tmp\\sp\\image"    );
-	my $download_dir =   make_path( "C:\\tmp\\sp\\download" );
-	my $build_dir    = remake_path( "C:\\tmp\\sp\\build"    );
+	my $class        = shift;
+	my $subpath      = shift || '';
+	my $basedir      = rel2abs( catdir( 't', "tmp$subpath" ) );
+	# File::Remove::clear( $basedir );
+	my $output_dir   = remake_path( catdir( $basedir, 'output'   ) );
+	my $image_dir    = remake_path( catdir( $basedir, 'image'    ) );
+	my $download_dir =   make_path( catdir( $basedir, 'download' ) );
+	my $build_dir    = remake_path( catdir( $basedir, 'build'    ) );
 	return (
 		output_dir   => $output_dir,
 		image_dir    => $image_dir,
@@ -64,23 +68,22 @@ sub cpan {
 
 sub new1 {
 	my $class = shift;
-	my @paths = $class->paths;
-	my $cpan  = $class->cpan;
-	return t::lib::Test1->new( cpan => $cpan, @paths, @_ );
+	return t::lib::Test1->new(
+		cpan => $class->cpan,
+		$class->paths(@_),
+	);
 }
 
 sub new2 {
-	my $class = shift;
-	my @paths = $class->paths;
-	my $cpan  = $class->cpan;
-	return t::lib::Test2->new( cpan => $cpan, @paths, @_ );
+	return t::lib::Test2->new( shift->paths(@_) );
 }
 
 sub new3 {
-	my $class = shift;
-	my @paths = $class->paths;
-	my $cpan  = $class->cpan;
-	return t::lib::Test3->new( cpan => $cpan, @paths, @_ );
+	return t::lib::Test3->new( shift->paths(@_) );
+}
+
+sub new4 {
+	return t::lib::Test4->new( shift->paths(@_) );
 }
 
 1;

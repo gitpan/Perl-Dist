@@ -1,6 +1,7 @@
-use inc::Module::Install 0.76;
+use inc::Module::Install 0.77;
 
 all_from       'lib/Perl/Dist.pm';
+requires       'blib'                       => 0;
 requires       'Archive::Tar'               => '1.34'; 
 requires       'Archive::Zip'               => '1.20';
 requires       'File::Copy::Recursive'      => '0.25';
@@ -10,6 +11,7 @@ requires       'File::pushd'                => '0.32';
 requires       'File::Spec'                 => '3.17';
 requires       'File::Remove'               => '0.37';
 requires       'File::ShareDir'             => '0.99';
+requires       'File::PathList'             => 0;
 requires       'File::Temp'                 => '0.20';
 requires       'HTTP::Status'               => '1.28';
 requires       'IPC::Run3'                  => '0.034';
@@ -22,6 +24,7 @@ requires       'Tie::Slurp'                 => '0.03';
 requires       'YAML::Tiny'                 => '1.12';
 requires       'Module::CoreList'           => '2.13';
 requires       'Params::Util'               => '0.25';
+requires       'Template'                   => '2.20';
 requires       'CPAN'                       => '1.9205';
 requires       'PAR::Dist'                  => '0.25';
 requires       'Process'                    => '0.20';
@@ -30,10 +33,10 @@ requires       'Process::Delegatable'       => 0;
 requires       'IO::Capture'                => '0.05';
 requires       'Win32::File::Object'        => '0.01' if $^O eq 'MSWin32';
 requires       'Portable::Dist'             => '0.02';
+requires       'Probe::Perl'                => '0.01';
 test_requires  'Test::More'                 => '0.42';
 test_requires  'Test::Script'               => '1.02';
 test_requires  'Test::LongString'           => 0;
-test_requires  'Probe::Perl'                => '0.01';
 install_script 'perldist';
 install_share;
 

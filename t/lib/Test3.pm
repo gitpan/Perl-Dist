@@ -1,11 +1,12 @@
 package t::lib::Test3;
 
 use strict;
-use base 'Perl::Dist';
+use Perl::Dist ();
 
-use vars qw{$VERSION};
+use vars qw{$VERSION @ISA};
 BEGIN {
-	$VERSION = '1.04';
+	$VERSION = '1.05_01';
+	@ISA     = 'Perl::Dist';
 }
 
 
@@ -27,52 +28,13 @@ sub output_base_filename { 'test-perl-5.10.0-alpha-1' }
 
 
 #####################################################################
-# Constructor
-
-sub new {
-	my $class = shift;
-	my $self  = $class->SUPER::new(@_);
-
-	# Add links
-	
-
-	return $self;
-}
-
-
-
-
-
-#####################################################################
 # Main Methods
 
-sub run {
-	my $self = shift;
-
-	# Install the core binaries
-	$self->install_c_toolchain;
-
-	# Install the extra libraries
-	$self->install_c_libraries;
-
-	# Install Perl 5.10.0
-	$self->install_perl_5100;
-
-	# Install the CPAN configuration
-	# $self->install_file(
-	#	share      => 'Perl-Dist Config.pm',
-	#	install_to => 'perl/lib/CPAN/Config.pm',
-	# );
-
-	# Install a test distro
-	$self->install_distribution(
-		name => 'ADAMK/Config-Tiny-2.12.tar.gz',
+sub new {
+	return shift->SUPER::new(
+		perl_version => 5100,
+		@_,
 	);
-
-	# Generate the exe file
-	my $output = $self->write_exe;
-	print "Generated $output\n";
-	return 1;
 }
 
 sub trace { Test::More::diag($_[1]) }

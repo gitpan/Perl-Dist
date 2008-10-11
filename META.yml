@@ -4,7 +4,6 @@ author:
   - 'Adam Kennedy <adamk@cpan.org>'
 build_requires:
   ExtUtils::MakeMaker: 6.11
-  Probe::Perl: 0.01
   Test::LongString: 0
   Test::More: 0.42
   Test::Script: 1.02
@@ -29,6 +28,7 @@ requires:
   File::Copy::Recursive: 0.25
   File::Find::Rule: 0.30
   File::Path: 1.08
+  File::PathList: 0
   File::Remove: 0.37
   File::ShareDir: 0.99
   File::Spec: 3.17
@@ -45,13 +45,16 @@ requires:
   PAR::Dist: 0.25
   Params::Util: 0.25
   Portable::Dist: 0.02
+  Probe::Perl: 0.01
   Process: 0.20
   Process::Delegatable: 0
   Process::Storable: 0
+  Template: 2.20
   Tie::File: 0
   Tie::Slurp: 0.03
   YAML::Tiny: 1.12
+  blib: 0
   perl: 5.6.0
 resources:
   license: http://dev.perl.org/licenses/
-version: 1.04
+version: 1.05_01

@@ -124,7 +124,7 @@ which details how to sub-class the distribution.
 use 5.006;
 use strict;
 use warnings;
-use Carp                       'croak';
+use Carp                       ();
 use Archive::Tar               ();
 use Archive::Zip               ();
 use File::Spec                 ();
@@ -133,11 +133,12 @@ use File::Spec::Win32          ();
 use File::Copy                 ();
 use File::Copy::Recursive      ();
 use File::Path                 ();
+use File::PathList             ();
 use File::pushd                ();
 use File::Remove               ();
 use File::Basename             ();
 use IPC::Run3                  ();
-use Params::Util               qw{ _STRING _HASH _INSTANCE };
+use Params::Util               ();
 use HTTP::Status               ();
 use LWP::UserAgent             ();
 use LWP::UserAgent::Determined ();
@@ -145,13 +146,15 @@ use LWP::Online                ();
 use Module::CoreList           ();
 use Tie::File                  ();
 use Tie::Slurp                 ();
+use Template                   ();
 use PAR::Dist                  ();
 use Portable::Dist             ();
+use Storable                   ();
 use Perl::Dist::Inno::Script   ();
 
 use vars qw{$VERSION @ISA};
 BEGIN {
-        $VERSION  = '1.04';
+        $VERSION  = '1.05_01';
 	@ISA      = 'Perl::Dist::Inno::Script';
 }
 
@@ -164,11 +167,13 @@ use Object::Tiny qw{
 
 	binary_root
 	offline
+	temp_dir
 	download_dir
 	image_dir
 	modules_dir
 	license_dir
 	build_dir
+	checkpoint_dir
 	iss_file
 	user_agent
 	bin_perl
@@ -184,6 +189,8 @@ use Object::Tiny qw{
 	perl_version_corelist
 	cpan
 	force
+	checkpoint_before
+	checkpoint_after
 };
 
 use Perl::Dist::Inno                ();
@@ -223,7 +230,7 @@ my %PACKAGES = (
 
 sub binary_file {
 	unless ( $PACKAGES{$_[1]} ) {
-		croak("Unknown package '$_[1]'");
+		Carp::croak("Unknown package '$_[1]'");
 	}
 	return $PACKAGES{$_[1]};
 }
@@ -361,25 +368,16 @@ sub new {
 		$params{build_dir} = File::Spec->catdir(
 			$params{temp_dir}, 'build',
 		);
-		if ( -d $params{build_dir} ) {
-			File::Remove::remove( \1, $params{build_dir} );
-		}
-		File::Path::mkpath($params{build_dir});
+		$class->remake_path( $params{build_dir} );
 	}
 	unless ( defined $params{output_dir} ) {
 		$params{output_dir} = File::Spec->catdir(
 			$params{temp_dir}, 'output',
 		);
-		if ( -d $params{output_dir} ) {
-			File::Remove::remove( \1, $params{output_dir} );
-		}
-		File::Path::mkpath($params{output_dir});
+		$class->remake_path( $params{output_dir} );
 	}
 	if ( defined $params{image_dir} ) {
-		if ( -d $params{image_dir} ) {
-			File::Remove::remove( \1, $params{image_dir} );
-		}
-		File::Path::mkpath($params{image_dir});
+		$class->remake_path( $params{image_dir} );
 	}
 	unless ( defined $params{perl_version} ) {
 		$params{perl_version} = '5100';
@@ -390,17 +388,17 @@ sub new {
 
 	# Check the version of Perl to build
 	unless ( $self->perl_version_literal ) {
-		croak "Failed to resolve perl_version_literal";
+		Carp::croak "Failed to resolve perl_version_literal";
 	}
 	unless ( $self->perl_version_human ) {
-		croak "Failed to resolve perl_version_human";
+		Carp::croak "Failed to resolve perl_version_human";
 	}
 	unless ( $self->can('install_perl_' . $self->perl_version) ) {
-		croak("$class does not support Perl " . $self->perl_version);
+		Carp::croak("$class does not support Perl " . $self->perl_version);
 	}
 	$self->{perl_version_corelist} = $Module::CoreList::version{$self->perl_version_literal+0};
-	unless ( _HASH($self->{perl_version_corelist}) ) {
-		croak("Failed to resolve Module::CoreList hash for " . $self->perl_version_human);
+	unless ( Params::Util::_HASH($self->{perl_version_corelist}) ) {
+		Carp::croak("Failed to resolve Module::CoreList hash for " . $self->perl_version_human);
 	}
 
         # Apply more defaults
@@ -439,6 +437,12 @@ sub new {
 	unless ( defined $self->zip ) {
 		$self->{zip} = 0;
 	}
+	unless ( defined $self->checkpoint_before ) {
+		$self->{checkpoint_before} = 0;
+	}
+	unless ( defined $self->checkpoint_after ) {
+		$self->{checkpoint_after} = 0;
+	}
 
 	# Normalize some params
 	$self->{offline}      = !! $self->offline;
@@ -462,35 +466,41 @@ sub new {
 	}
 
 	# Check params
-	unless ( _STRING($self->download_dir) ) {
-		croak("Missing or invalid download_dir param");
+	unless ( Params::Util::_STRING($self->download_dir) ) {
+		Carp::croak("Missing or invalid download_dir param");
 	}
 	unless ( defined $self->modules_dir ) {
 		$self->{modules_dir} = File::Spec->catdir( $self->download_dir, 'modules' );
 	}
-	unless ( _STRING($self->modules_dir) ) {
-		croak("Invalid modules_dir param");
+	unless ( Params::Util::_STRING($self->modules_dir) ) {
+		Carp::croak("Invalid modules_dir param");
 	}
-	unless ( _STRING($self->image_dir) ) {
-		croak("Missing or invalid image_dir param");
+	unless ( Params::Util::_STRING($self->image_dir) ) {
+		Carp::croak("Missing or invalid image_dir param");
+	}
+	if ( $self->image_dir =~ /\s/ ) {
+		Carp::croak("Spaces are not allowed in image_dir");
 	}
 	unless ( defined $self->license_dir ) {
 		$self->{license_dir} = File::Spec->catdir( $self->image_dir, 'licenses' );
 	}
-	unless ( _STRING($self->license_dir) ) {
-		croak("Invalid license_dir param");
+	unless ( Params::Util::_STRING($self->license_dir) ) {
+		Carp::croak("Invalid license_dir param");
 	}
-	unless ( _STRING($self->build_dir) ) {
-		croak("Missing or invalid build_dir param");
+	unless ( Params::Util::_STRING($self->build_dir) ) {
+		Carp::croak("Missing or invalid build_dir param");
 	}
-	unless ( _INSTANCE($self->user_agent, 'LWP::UserAgent') ) {
-		croak("Missing or invalid user_agent param");
+	if ( $self->build_dir =~ /\s/ ) {
+		Carp::croak("Spaces are not allowed in build_dir");
 	}
-	unless ( _INSTANCE($self->cpan, 'URI') ) {
-		croak("Missing or invalid cpan param");
+	unless ( Params::Util::_INSTANCE($self->user_agent, 'LWP::UserAgent') ) {
+		Carp::croak("Missing or invalid user_agent param");
+	}
+	unless ( Params::Util::_INSTANCE($self->cpan, 'URI') ) {
+		Carp::croak("Missing or invalid cpan param");
 	}
 	unless ( $self->cpan->as_string =~ /\/$/ ) {
-		croak("Missing trailing slash in cpan param");
+		Carp::croak("Missing trailing slash in cpan param");
 	}
 	unless ( defined $self->iss_file ) {
 		$self->{iss_file} = File::Spec->catfile(
@@ -584,6 +594,79 @@ C<source_dir>. (although theoretically they can be different,
 this is likely to break the user's Perl install)
 
 =cut
+
+
+
+
+
+#####################################################################
+# Checkpoint Support
+
+sub checkpoint_task {
+	my $self = shift;
+	my $task = shift;
+	my $step = shift;
+
+	# Are we loading at this step?
+	if ( $self->checkpoint_before == $step ) {
+		$self->checkpoint_load;
+	}
+
+	# Skip if we are loading later on
+	unless ( $self->checkpoint_before > $step ) {
+		my $t = time;
+		$self->$task();
+		$self->trace("Completed $task in " . (time - $t) . " seconds\n");
+	}
+
+	# Are we saving at this step
+	if ( $self->checkpoint_after == $step ) {
+		$self->checkpoint_save;
+	}
+
+	return $self;
+}
+
+sub checkpoint_file {
+	File::Spec->catfile( $_[0]->checkpoint_dir, 'self.dat' );
+}
+
+sub checkpoint_self {
+
+}
+
+sub checkpoint_save {
+	my $self = shift;
+	unless ( $self->temp_dir ) {
+		die "Checkpoints require a temp_dir to be set";
+	}
+
+	# Clear out any existing checkpoint
+	$self->trace("Removing old checkpoint\n");
+	$self->{checkpoint_dir} = File::Spec->catfile(
+		$self->temp_dir, 'checkpoint',
+	);
+	$self->remake_path( $self->checkpoint_dir );
+
+	# Copy the paths into the checkpoint directory
+	$self->trace("Copying checkpoint directories...\n");
+	foreach my $dir ( qw{ build_dir download_dir image_dir output_dir } ) {
+		my $from = $self->$dir();
+		my $to   = File::Spec->catdir( $self->checkpoint_dir, $dir );
+		$self->_copy( $from => $to );
+	}
+
+	# Store the main object.
+	# Blank the checkpoint values to prevent load/save loops
+	Storable::nstore( {
+		%$self,
+		checkpoint_before => 0,
+		checkpoint_after  => 0,
+	}, $self->checkpoint_file );
+
+	return 1;
+}
+
 
 
 
@@ -694,60 +777,34 @@ This method may take an hour or more to run.
 sub run {
 	my $self  = shift;
 	my $start = time;
-	my $t     = undef;
 
 	# Install the core C toolchain
-	$t = time;
-	$self->install_c_toolchain;
-	$self->trace("Completed install_c_toolchain in " . (time - $t) . " seconds\n");
+	$self->checkpoint_task( install_c_toolchain  => 1 );
 
 	# Install any additional C libraries
-	$t = time;
-	$self->install_c_libraries;
-	$self->trace("Completed install_c_libraries in " . (time - $t) . " seconds\n");
+	$self->checkpoint_task( install_c_libraries  => 2 );
 
 	# Install the Perl binary
-	$t = time;
-	$self->install_perl;
-	$self->trace("Completed install_perl in " . (time - $t) . " seconds\n");
+	$self->checkpoint_task( install_perl         => 3 );
 
 	# Install additional Perl modules
-	$t = time;
-	$self->install_perl_modules;
-	$self->trace("Completed install_perl_modules in " . (time - $t) . " seconds\n");
+	$self->checkpoint_task( install_perl_modules => 4 );
 
 	# Install the Win32 extras
-	$t = time;
-	$self->install_win32_extras;
-	$self->trace("Completed install_win32_extras in " . (time - $t) . " seconds\n");
+	$self->checkpoint_task( install_win32_extras => 5 );
+
+	# Apply optional portability support
+	$self->checkpoint_task( install_portable     => 6 ) if $self->portable;
 
 	# Remove waste and temporary files
-	$t = time;
-	$self->remove_waste;
-	$self->trace("Completed remove_waste in " . (time - $t) . " seconds\n");
+	$self->checkpoint_task( remove_waste         => 7 );
 
-	# Install any extra custom software on top of Perl.
+	# Install any extra custom non-Perl software on top of Perl.
 	# This is primarily added for the benefit of Parrot.
-	$self->install_custom;
-
-	# Apply portability if needed
-	if ( $self->portable ) {
-		# Create the portability object
-		$self->trace("Creating Portable::Dist\n");
-		$self->{portable_dist} = Portable::Dist->new(
-			perl_root => File::Spec->catdir(
-				$self->image_dir => 'perl',
-			),
-		);
-		$self->trace("Running Portable::Dist\n");
-		$self->{portable_dist}->run;
-		$self->trace("Completed Portable::Dist\n");
-	}
+	$self->checkpoint_task( install_custom       => 8 );
 
 	# Write out the distributions
-	$t = time;
-	my $exe = $self->write;
-	$self->trace("Completed write in " . (time - $t) . " seconds\n");
+	$self->checkpoint_task( write                => 9 );
 
 	# Finished
 	$self->trace("Distribution generation completed in " . (time - $start) . " seconds\n");
@@ -822,8 +879,8 @@ sub install_c_toolchain {
 
 	# Set up the environment variables for the binaries
 	$self->add_env_path(    'c', 'bin'     );
-	$self->add_env_lib(     'c', 'lib'     );
-	$self->add_env_include( 'c', 'include' );
+	# $self->add_env_lib(     'c', 'lib'     );
+	# $self->add_env_include( 'c', 'include' );
 
 	return 1;
 }
@@ -843,17 +900,87 @@ sub install_perl {
 	my $self = shift;
 	my $install_perl_method = "install_perl_" . $self->perl_version;
 	unless ( $self->can($install_perl_method) ) {
-		croak("Cannot generate perl, missing $install_perl_method method in " . ref($self));
+		Carp::croak("Cannot generate perl, missing $install_perl_method method in " . ref($self));
 	}
 	$self->$install_perl_method(@_);
 }
 
+sub install_perl_toolchain {
+	my $self      = shift;
+	my $toolchain = @_
+		? Params::Util::_INSTANCE($_[0], 'Perl::Dist::Util::Toolchain')
+		: Perl::Dist::Util::Toolchain->new(
+			perl_version => $self->perl_version_literal,
+		);
+	unless ( $toolchain ) {
+		die("Did not provide a toolchain resolver");
+	}
+
+	# Get the regular Perl to generate the list.
+	# Run it in a separate process so we don't hold
+	# any permanent CPAN.pm locks.
+	$toolchain->delegate;
+	if ( $toolchain->{errstr} ) {
+		die("Failed to generate toolchain distributions");
+	}
+
+	# Install the toolchain dists
+	foreach my $dist ( @{$toolchain->{dists}} ) {
+		my $automated_testing = 0;
+		my $release_testing   = 0;
+		my $force             = $self->force;
+		if ( $dist =~ /Scalar-List-Util/ ) {
+			# Does something weird with tainting
+			$force = 1;
+		}
+		if ( $dist =~ /Term-ReadLine-Perl/ ) {
+			# Does evil things when testing, and
+			# so testing cannot be automated.
+			$automated_testing = 1;
+		}
+		$self->install_distribution(
+			name              => $dist,
+			force             => $force,
+			automated_testing => $automated_testing,
+			release_testing   => $release_testing,
+		);
+	}
+
+	return 1;
+}
+
 # No additional modules by default
 sub install_perl_modules {
-	my $class = shift;
-	if ( $class eq __PACKAGE__ ) {
-		$class->trace("install_perl_modules: Nothing to do\n");
-	}
+	my $self = shift;
+	return 1;
+}
+
+# Portability support must be added after modules
+sub install_portable {
+	my $self = shift;
+
+	# Install the regular parts of Portability
+	$self->install_module(
+		name => 'Portable',
+	);
+
+	# Create the portability object
+	$self->trace("Creating Portable::Dist\n");
+	$self->{portable_dist} = Portable::Dist->new(
+		perl_root => File::Spec->catdir(
+			$self->image_dir => 'perl',
+		),
+	);
+	$self->trace("Running Portable::Dist\n");
+	$self->{portable_dist}->run;
+	$self->trace("Completed Portable::Dist\n");
+
+	# Install the file that turns on Portability last
+	$self->install_file(
+		share      => 'Perl-Dist portable.perl',
+		install_to => 'portable.perl',
+	);
+
 	return 1;
 }
 
@@ -936,23 +1063,30 @@ sub install_perl_588 {
 	# Install the main perl distributions
 	$self->install_perl_588_bin(
 		name       => 'perl',
-		dist       => 'NWCLARK/perl-5.8.8.tar.gz',
+		url        => 'http://strawberryperl.com/package/perl-5.8.8.tar.gz',
 		unpack_to  => 'perl',
-		patch      => {
-			'ExtUtils_Install588.pm'   => 'lib\ExtUtils\Install.pm',
-			'ExtUtils_Installed588.pm' => 'lib\ExtUtils\Installed.pm',
-			'ExtUtils_Packlist588.pm'  => 'lib\ExtUtils\Packlist.pm',
-		},
+		install_to => 'perl',
+		patch      => [ qw{
+			lib/ExtUtils/Install.pm
+			lib/ExtUtils/Installed.pm
+			lib/ExtUtils/Packlist.pm
+			lib/ExtUtils/t/Install.t
+			lib/ExtUtils/t/Installed.t
+			lib/ExtUtils/t/Installapi2.t
+			lib/ExtUtils/t/Packlist.t
+			lib/ExtUtils/t/basic.t
+			lib/ExtUtils/t/can_write_dir.t
+			lib/CPAN/Config.pm
+		} ],
 		license    => {
 			'perl-5.8.8/Readme'   => 'perl/Readme',
 			'perl-5.8.8/Artistic' => 'perl/Artistic',
 			'perl-5.8.8/Copying'  => 'perl/Copying',
 		},
-		install_to => 'perl',
 	);
 
 	# Upgrade the toolchain modules
-	$self->install_perl_588_toolchain;
+	$self->install_perl_toolchain;
 
 	return 1;
 }
@@ -965,7 +1099,7 @@ sub install_perl_588_bin {
 		@_,
 	);
 	unless ( $self->bin_make ) {
-		croak("Cannot build Perl yet, no bin_make defined");
+		Carp::croak("Cannot build Perl yet, no bin_make defined");
 	}
 
 	# Download the file
@@ -989,12 +1123,9 @@ sub install_perl_588_bin {
 	# Pre-copy updated files over the top of the source
 	my $patch = $perl->patch;
 	if ( $patch ) {
-		foreach my $f ( sort keys %$patch ) {
-			my $from = File::ShareDir::dist_file( 'Perl-Dist', $f );
-			my $to   = File::Spec->catfile(
-				$unpack_to, $perlsrc, $patch->{$f},
-			);
-			$self->_copy( $from => $to );
+		# Overwrite the appropriate files
+		foreach my $file ( @$patch ) {
+			$self->patch_file( "perl-5.8.8/$file" => $unpack_to );
 		}
 	}
 
@@ -1011,16 +1142,16 @@ sub install_perl_588_bin {
 		);
 
 		# Prepare to patch
-		my $image_dir    = $self->image_dir;
-		my $perl_install = File::Spec->catdir( $self->image_dir, $perl->install_to );
-		my (undef,$short_install) = File::Spec->splitpath( $perl_install, 1 );
+		my $image_dir  = $self->image_dir;
+		my $INST_TOP   = File::Spec->catdir( $self->image_dir, $perl->install_to );
+		my ($INST_DRV) = File::Spec->splitpath( $INST_TOP, 1 );
 
 		$self->trace("Patching makefile.mk\n");
-		tie my $makefile, 'Tie::Slurp', 'makefile.mk'
-			or die "Couldn't read makefile.mk";
-		$makefile =~ s/(\nINST_TOP\s+\*=\s+.+?)\\perl\b/$1$short_install/;
-		$makefile =~ s/(\nCCHOME\s+\*=\s+)C\:\\MinGW\b/$1$image_dir\\c/;
-		untie $makefile;
+		$self->patch_file( 'perl-5.8.8/win32/makefile.mk' => $unpack_to, {
+			dist     => $self,
+			INST_DRV => $INST_DRV,
+			INST_TOP => $INST_TOP,
+		} );
 
 		$self->trace("Building perl...\n");
 		$self->_make;
@@ -1038,80 +1169,15 @@ sub install_perl_588_bin {
 	# Should now have a perl to use
 	$self->{bin_perl} = File::Spec->catfile( $self->image_dir, qw/perl bin perl.exe/ );
 	unless ( -x $self->bin_perl ) {
-		die "Can't execute " . $self->bin_perl;
+		Carp::croak("Can't execute " . $self->bin_perl);
 	}
 
 	# Add to the environment variables
 	$self->add_env_path( 'perl', 'bin' );
-	$self->add_env_lib(  'perl', 'bin' );
-	$self->add_env_include( 'perl', 'lib', 'CORE' );
+	# $self->add_env_lib(  'perl', 'bin' );
+	# $self->add_env_include( 'perl', 'lib', 'CORE' );
 
 	return 1;
-}
-
-sub install_perl_588_toolchain {
-	my $self      = shift;
-	my $toolchain = $self->install_perl_588_toolchain_object;
-
-	# Get the regular Perl to generate the list.
-	# Run it in a separate process so we don't hold
-	# any permanent CPAN.pm locks.
-	$toolchain->delegate;
-	if ( $toolchain->{errstr} ) {
-		die "Failed to generate toolchain distributions";
-	}
-
-	# Install the toolchain dists
-	foreach my $dist ( @{$toolchain->{dists}} ) {
-		my $automated_testing = 0;
-		my $force             = $self->force;
-		if ( $dist =~ /Scalar-List-Util/ ) {
-			# Does something weird with tainting
-			$force = 1;
-		}
-		if ( $dist =~ /File-Temp/ ) {
-			# Lock tests break
-			$force = 1;
-		}
-		if ( $dist =~ /Term-ReadLine-Perl/ ) {
-			# Does evil things when testing, and
-			# so testing cannot be automated.
-			$automated_testing = 1;
-		}
-		if ( $dist =~ /libwww/ ) {
-			# Tests break behind a proxy, so force them
-			$force = 1;
-		}
-		$self->install_distribution(
-			name              => $dist,
-			force             => $force,
-			automated_testing => $automated_testing,
-		);
-	}
-
-	# Patch MakeMaker to avoid a bug with explicit dmake
-	$self->install_file(
-		share      => 'Perl-Dist MM_Win32_644.pm',
-		install_to => 'perl/lib/ExtUtils/MM_Win32.pm',
-	);
-
-	# With the toolchain we need in place, install the default
-	# configuation.
-	$self->install_file(
-		share      => 'Perl-Dist CPAN_Config.pm',
-		install_to => 'perl/lib/CPAN/Config.pm',
-	);
-
-	return 1;
-}
-
-sub install_perl_588_toolchain_object {
-	Perl::Dist::Util::Toolchain->new(
-		perl_version => $_[0]->perl_version_literal,
-		force        => {
-			'ExtUtils::CBuilder' => 'KWILLIAMS/ExtUtils-CBuilder-0.21.tar.gz',
-		},
-	);
 }
 
 
@@ -1142,22 +1208,28 @@ sub install_perl_5100 {
 	# Install the main binary
 	$self->install_perl_5100_bin(
 		name       => 'perl',
-                dist       => 'RGARCIA/perl-5.10.0.tar.gz',
+                url        => 'http://strawberryperl.com/package/perl-5.10.0.tar.gz',
 		unpack_to  => 'perl',
-		patch      => {
-			'ExtUtils_Command5100.pm' => 'lib\ExtUtils\Command.pm',
-#			'eu_command5100.t'        => 'lib\ExtUtils\t\eu_command.t',
-		},
+		install_to => 'perl',
+		patch      => [ qw{
+			lib/ExtUtils/Command.pm
+		} ],
 		license    => {
 			'perl-5.10.0/Readme'   => 'perl/Readme',
 			'perl-5.10.0/Artistic' => 'perl/Artistic',
 			'perl-5.10.0/Copying'  => 'perl/Copying',
 		},
-		install_to => 'perl',
 	);
 
 	# Install the toolchain
-	$self->install_perl_5100_toolchain;
+	$self->install_perl_toolchain(
+		Perl::Dist::Util::Toolchain->new(
+			perl_version => $self->perl_version_literal,
+			force        => {
+				'File::Path' => 'DLAND/File-Path-2.04.tar.gz',
+			},
+		)
+	);
 
 	return 1;
 }
@@ -1207,7 +1279,7 @@ sub install_perl_5100_bin {
 		@_,
 	);
 	unless ( $self->bin_make ) {
-		croak("Cannot build Perl yet, no bin_make defined");
+		die("Cannot build Perl yet, no bin_make defined");
 	}
 	$self->trace("Preparing " . $perl->name . "\n");
 
@@ -1232,12 +1304,9 @@ sub install_perl_5100_bin {
 	# Pre-copy updated files over the top of the source
 	my $patch = $perl->patch;
 	if ( $patch ) {
-		foreach my $f ( sort keys %$patch ) {
-			my $from = File::ShareDir::dist_file( 'Perl-Dist', $f );
-			my $to   = File::Spec->catfile(
-				$unpack_to, $perlsrc, $patch->{$f},
-			);
-			$self->_copy( $from => $to );
+		# Overwrite the appropriate files
+		foreach my $file ( @$patch ) {
+			$self->patch_file( "perl-5.10.0/$file" => $unpack_to );
 		}
 	}
 
@@ -1254,30 +1323,16 @@ sub install_perl_5100_bin {
 		);
 
 		# Prepare to patch
-		my $image_dir    = $self->image_dir;
-		my $perl_install = File::Spec->catdir( $self->image_dir, $perl->install_to );
-		my ($vol,$short_install) = File::Spec->splitpath( $perl_install, 1 );
-		SCOPE: {
-			$self->trace("Patching makefile.mk\n");
+		my $image_dir  = $self->image_dir;
+		my $INST_TOP   = File::Spec->catdir( $self->image_dir, $perl->install_to );
+		my ($INST_DRV) = File::Spec->splitpath( $INST_TOP, 1 );
 
-			# Read in the makefile
-			local *MAKEFILE;
-			local $/ = undef;
-			open( MAKEFILE, 'makefile.mk' ) or die "open: $!";
-			my $makefile_mk = <MAKEFILE>;
-			close( MAKEFILE ) or die "close: $!";
-			$makefile_mk =~ s/(?:\015{1,2}\012|\015|\012)/\n/sg;
-
-			# Apply the changes
-			$makefile_mk =~ s/^(INST_DRV\s+\*=\s+).+?(\n)/$1$vol$2/m;
-			$makefile_mk =~ s/^(INST_TOP\s+\*=\s+).+?(\n)/$1$perl_install$2/m;
-			$makefile_mk =~ s/C\:\\MinGW/$image_dir\\c/;
-
-			# Write out the makefile
-			open ( MAKEFILE, '>makefile.mk' ) or die "open: $!";
-			print( MAKEFILE $makefile_mk    ) or die "print: $!";
-			close( MAKEFILE                 ) or die "close: $!";
-		}
+		$self->trace("Patching makefile.mk\n");
+		$self->patch_file( 'perl-5.10.0/win32/makefile.mk' => $unpack_to, {
+			dist     => $self,
+			INST_DRV => $INST_DRV,
+			INST_TOP => $INST_TOP,
+		} );
 
 		$self->trace("Building perl...\n");
 		$self->_make;
@@ -1300,68 +1355,10 @@ sub install_perl_5100_bin {
 
 	# Add to the environment variables
 	$self->add_env_path( 'perl', 'bin' );
-	$self->add_env_lib(  'perl', 'bin' );
-	$self->add_env_include( 'perl', 'lib', 'CORE' );
+	# $self->add_env_lib(  'perl', 'bin' );
+	# $self->add_env_include( 'perl', 'lib', 'CORE' );
 
 	return 1;
-}
-
-sub install_perl_5100_toolchain {
-	my $self      = shift;
-	my $toolchain = $self->install_perl_5100_toolchain_object;
-
-	# Get the regular Perl to generate the list.
-	# Run it in a separate process so we don't hold
-	# any permanent CPAN.pm locks.
-	$toolchain->delegate;
-	if ( $toolchain->{errstr} ) {
-		die "Failed to generate toolchain distributions";
-	}
-
-	# Install the toolchain dists
-	foreach my $dist ( @{$toolchain->{dists}} ) {
-		my $automated_testing = 0;
-		my $force             = $self->force;
-		if ( $dist =~ /Scalar-List-Util/ ) {
-			# Does something weird with tainting
-			$force = 1;
-		}
-		if ( $dist =~ /File-Temp/ ) {
-			# Lock tests break
-			$force = 1;
-		}
-		if ( $dist =~ /Term-ReadLine-Perl/ ) {
-			# Does evil things when testing, and
-			# so testing cannot be automated.
-			$automated_testing = 1;
-		}
-		if ( $dist =~ /libwww/ ) {
-			# Tests break behind a proxy, so force them
-			$force = 1;
-		}
-		$self->install_distribution(
-			name              => $dist,
-			force             => $force,
-			automated_testing => $automated_testing,
-		);
-	}
-
-	# Patch MakeMaker to avoid a bug with explicit dmake
-	$self->install_file(
-		share      => 'Perl-Dist MM_Win32_644.pm',
-		install_to => 'perl/lib/ExtUtils/MM_Win32.pm',
-	);
-
-	return 1;
-}
-
-sub install_perl_5100_toolchain_object {
-	Perl::Dist::Util::Toolchain->new(
-		perl_version => $_[0]->perl_version_literal,
-		force        => {
-			'File::Path' => 'DLAND/File-Path-2.04.tar.gz',
-		},
-	);
 }
 
 
@@ -1409,7 +1406,7 @@ sub install_dmake {
 		$self->image_dir, 'c', 'bin', 'dmake.exe',
 	);
 	unless ( -x $self->bin_make ) {
-		croak("Can't execute make");
+		Carp::croak("Can't execute make");
 	}
 
 	return 1;
@@ -1877,7 +1874,7 @@ sub install_library {
 	$self->_extract( $tgz => $unpack_to );
 
 	# Build the .a file if needed
-	if ( _HASH($library->build_a) ) {
+	if ( Params::Util::_HASH($library->build_a) ) {
 		# Hand off for the .a generation
 		$self->_dll_to_a(
 			$library->build_a->{source} ?
@@ -1900,7 +1897,7 @@ sub install_library {
 
 	# Copy in the files
 	my $install_to = $library->install_to;
-	if ( _HASH($install_to) ) {
+	if ( Params::Util::_HASH($install_to) ) {
 		foreach my $k ( sort keys %$install_to ) {
 			my $from = File::Spec->catdir(
 				$unpack_to, $k,
@@ -1913,7 +1910,7 @@ sub install_library {
 	}
 
 	# Copy in licenses
-	if ( _HASH($library->license) ) {
+	if ( Params::Util::_HASH($library->license) ) {
 		my $license_dir = File::Spec->catdir( $self->image_dir, 'licenses' );
 		$self->_extract_filemap( $tgz, $library->license, $license_dir, 1 );
 	}
@@ -1994,7 +1991,7 @@ sub install_distribution {
 	}
 	$self->_extract( $tgz => $self->build_dir );
 	unless ( -d $unpack_to ) {
-		croak("Failed to extract $unpack_to");
+		Carp::croak("Failed to extract $unpack_to");
 	}
 
 	# Build the module
@@ -2006,7 +2003,11 @@ sub install_distribution {
 		if ( $dist->automated_testing ) {
 			$self->trace("Installing with AUTOMATED_TESTING enabled...\n");
 		}
-		local $ENV{AUTOMATED_TESTING} = $dist->automated_testing ? 1 : '';
+		if ( $dist->release_testing ) {
+			$self->trace("Installing with RELEASE_TESTING enabled...\n");
+		}
+		local $ENV{AUTOMATED_TESTING} = $dist->automated_testing;
+		local $ENV{RELEASE_TESTING}   = $dist->release_testing;
 
 		$self->trace("Configuring $name...\n");
 		$self->_perl( 'Makefile.PL', @{$dist->makefilepl_param} );
@@ -2064,12 +2065,12 @@ sub install_module {
 	my $name   = $module->name;
 	my $force  = $module->force;
 	unless ( $self->bin_perl ) {
-		croak("Cannot install CPAN modules yet, perl is not installed");
+		Carp::croak("Cannot install CPAN modules yet, perl is not installed");
 	}
 
 	# Generate the CPAN installation script
-	my $env_lib     = $self->get_env_lib;
-	my $env_include = $self->get_env_include;
+	# my $env_lib     = $self->get_env_lib;
+	# my $env_include = $self->get_env_include;
 	my $cpan_string = <<"END_PERL";
 print "Loading CPAN...\\n";
 use CPAN;
@@ -2081,10 +2082,7 @@ if ( \$module->uptodate ) {
 	print "$name is up to date\\n";
 	exit(0);
 }
-print "\\\$ENV{PATH}    = '\$ENV{PATH}'\\n";
-print "\\\$ENV{LIB}     = '\$ENV{LIB}'\\n";
-print "\\\$ENV{INCLUDE} = '\$ENV{INCLUDE}'\\n";
-local \$ENV{PERL_MM_USE_DEFAULT} = 1;
+print "\\\$ENV{PATH} = '\$ENV{PATH}'\\n";
 if ( $force ) {
 	CPAN::Shell->notest('install', '$name');
 } else {
@@ -2104,12 +2102,14 @@ END_PERL
 		'cpan_string.pl',
 	);
 	SCOPE: {
-		open( CPAN_FILE, '>', $cpan_file ) or die "open: $!";
-		print CPAN_FILE $cpan_string       or die "print: $!";
-		close( CPAN_FILE )                 or die "close: $!";
+		open( CPAN_FILE, '>', $cpan_file )  or die "open: $!";
+		print CPAN_FILE $cpan_string        or die "print: $!";
+		close( CPAN_FILE )                  or die "close: $!";
 	}
-	$self->_run3( $self->bin_perl, $cpan_file )
-		or die "perl failed";
+	local $ENV{PERL_MM_USE_DEFAULT} = 1;
+	local $ENV{AUTOMATED_TESTING}   = '';
+	local $ENV{RELEASE_TESTING}     = '';
+	$self->_run3( $self->bin_perl, $cpan_file ) or die "perl failed";
 	die "Failure detected installing $name, stopping" if $?;
 
 	return 1;
@@ -2168,28 +2168,25 @@ sub install_par {
 		#install_to => 'c', # Default to the C dir
 		@_,
 	);
-	my $name = $par->name;
 
 	# Download the file.
-	# Do it here for consistency, instead of letting PAR::Dist do it
-	$self->trace("Preparing $name\n");
+	# Do it here for consistency instead of letting PAR::Dist do it
+	$self->trace("Preparing " . $par->name . "\n");
 	my $file = $self->_mirror( 
 		$par->url,
 		$self->download_dir,
 	);
 
-
-	# set the appropriate installation paths
+	# Set the appropriate installation paths
+	my $no_colon = $par->name;
+	   $no_colon =~ s/::/-/g;
 	my $perldir  = File::Spec->catdir($self->image_dir, 'perl');
-
-	my $libdir = File::Spec->catdir($perldir, 'site', 'lib');
-	my $bindir = File::Spec->catdir($perldir, 'bin');
-	my $no_colon_name = $name;
-	$no_colon_name =~ s/::/-/g;
-	my $packlist = File::Spec->catfile($libdir, $no_colon_name, '.packlist');
+	my $libdir   = File::Spec->catdir($perldir, 'site', 'lib');
+	my $bindir   = File::Spec->catdir($perldir, 'bin');
+	my $packlist = File::Spec->catfile($libdir, $no_colon, '.packlist');
 	my $cdir     = File::Spec->catdir($self->image_dir, 'c');
 
-	# install
+	# Install
 	PAR::Dist::install_par(
 		dist           => $file,
 		inst_lib       => $libdir,
@@ -2559,7 +2556,7 @@ sub add_env_path {
 		$self->image_dir, @path,
 	);
 	unless ( -d $dir ) {
-		croak("PATH directory $dir does not exist");
+		Carp::croak("PATH directory $dir does not exist");
 	}
 	push @{$self->{env_path}}, [ @path ];
 	return 1;
@@ -2586,7 +2583,7 @@ sub add_env_lib {
 		$self->image_dir, @path,
 	);
 	unless ( -d $dir ) {
-		croak("INC directory $dir does not exist");
+		Carp::croak("INC directory $dir does not exist");
 	}
 	push @{$self->{env_lib}}, [ @path ];
 	return 1;
@@ -2613,7 +2610,7 @@ sub add_env_include {
 		$self->image_dir, @path,
 	);
 	unless ( -d $dir ) {
-		croak("PATH directory $dir does not exist");
+		Carp::croak("PATH directory $dir does not exist");
 	}
 	push @{$self->{env_include}}, [ @path ];
 	return 1;
@@ -2632,6 +2629,84 @@ sub get_inno_include {
 		File::Spec->catdir( '{app}', @$_ )
 	} @{$self->env_include};
 }
+
+
+
+
+
+#####################################################################
+# Patch Support
+
+# By default only use the default
+sub patch_include_path {
+	my $self  = shift;
+	my $share = File::ShareDir::dist_dir('Perl-Dist');
+	my $path  = File::Spec->catdir(
+		$share, 'default',
+	);
+	unless ( -d $path ) {
+		die("Directory $path does not exist");
+	}
+	return [ $path ];
+}
+
+sub patch_pathlist {
+	my $self = shift;
+	return File::PathList->new(
+		paths => $self->patch_include_path,
+	);
+}
+
+# Cache this
+sub patch_template {
+	$_[0]->{template_toolkit} or
+	$_[0]->{template_toolkit} = Template->new(
+		INCLUDE_PATH => $_[0]->patch_include_path,
+		ABSOLUTE     => 1,
+	);
+}
+
+sub patch_file {
+	my $self     = shift;
+	my $file     = shift;
+	my $file_tt  = $file . '.tt';
+	my $dir      = shift;
+	my $to       = File::Spec->catfile( $dir, $file );
+	my $pathlist = $self->patch_pathlist;
+
+	# Locate the source file
+	my $from    = $pathlist->find_file( $file );
+	my $from_tt = $pathlist->find_file( $file_tt );;
+	unless ( defined $from and defined $from_tt ) {
+		die "Missing or invalid file $file or $file_tt in pathlist search";
+	}
+
+	if ( $from_tt ne '' ) {
+		# Generate the file
+		my $hash = Params::Util::_HASH(shift) || {};
+		my ($fh, $output) = File::Temp::tempfile();
+		$self->trace("Generating $from_tt into temp file $output\n");
+		$self->patch_template->process(
+			$from_tt,
+			{ %$hash, self => $self },
+			$fh,
+		) or die "Template processing failed for $from_tt";
+
+		# Copy the file to the final location
+		$fh->close;
+		$self->_copy( $output => $to );
+
+	} elsif ( $from ne '' ) {
+		# Simple copy of the regular file to the target location
+		$self->_copy( $from => $to );
+
+	} else {
+		die "Failed to find file $file";
+	}
+
+	return 1;
+}
+
 
 
 
@@ -2671,15 +2746,24 @@ sub _mirror {
 	File::Path::mkpath($dir);
 	$| = 1;
 
-	$self->trace("Downloading $url...\n");
-	my $ua = LWP::UserAgent::Determined->new;
-	my $r  = $ua->mirror( $url, $target );
-	if ( $r->is_error ) {
-		$self->trace("    Error getting $url:\n" . $r->as_string . "\n");
-
-	} elsif ( $r->code == HTTP::Status::RC_NOT_MODIFIED ) {
-		$self->trace("(already up to date)\n");
-
+	$self->trace("Downloading file $url...\n");
+	if ( $url =~ m|^file://| ) {
+		# Don't use Determined for files (it generates warnings)
+		my $ua = LWP::UserAgent->new;
+		my $r  = $ua->mirror( $url, $target );
+		if ( $r->is_error ) {
+			$self->trace("    Error getting $url:\n" . $r->as_string . "\n");
+		} elsif ( $r->code == HTTP::Status::RC_NOT_MODIFIED ) {
+			$self->trace("(already up to date)\n");
+		}
+	} else {
+		my $ua = LWP::UserAgent::Determined->new;
+		my $r  = $ua->mirror( $url, $target );
+		if ( $r->is_error ) {
+			$self->trace("    Error getting $url:\n" . $r->as_string . "\n");
+		} elsif ( $r->code == HTTP::Status::RC_NOT_MODIFIED ) {
+			$self->trace("(already up to date)\n");
+		}
 	}
 
 	return $target;
@@ -2738,10 +2822,10 @@ sub _perl {
 sub _run3 {
 	my $self = shift;
 
-	# Clean the simple environment keys
+	# Clean the environment keys
 	local $ENV{PERL5LIB} = '';
-	local $ENV{INCLUDE}  = $self->get_env_include;
-	local $ENV{LIB}      = $self->get_env_lib;
+	local $ENV{LIB}      = '';
+	local $ENV{INCLUDE}  = '';
 
 	# Remove any Perl installs from PATH to prevent
 	# "which" discovering stuff it shouldn't.
@@ -2841,36 +2925,36 @@ sub _dll_to_a {
 	my $self   = shift;
 	my %params = @_;
 	unless ( $self->bin_dlltool ) {
-		croak("Required method bin_dlltool is not defined");
+		Carp::croak("Required method bin_dlltool is not defined");
 	}
 
 	# Source file
 	my $source = $params{source};
 	if ( $source and ! $source =~ /\.dll$/ ) {
-		croak("Missing or invalid source param");
+		Carp::croak("Missing or invalid source param");
 	}
 
 	# Target .dll file
 	my $dll = $params{dll};
 	unless ( $dll and $dll =~ /\.dll/ ) {
-		croak("Missing or invalid .dll file");
+		Carp::croak("Missing or invalid .dll file");
 	}
 
 	# Target .def file
 	my $def = $params{def};
 	unless ( $def and $def =~ /\.def$/ ) {
-		croak("Missing or invalid .def file");
+		Carp::croak("Missing or invalid .def file");
 	}
 
 	# Target .a file
 	my $_a = $params{a};
 	unless ( $_a and $_a =~ /\.a$/ ) {
-		croak("Missing or invalid .a file");
+		Carp::croak("Missing or invalid .a file");
 	}
 
 	# Step 1 - Copy the source .dll to the target if needed
 	unless ( ($source and -f $source) or -f $dll ) {
-		croak("Need either a source or dll param");
+		Carp::croak("Need either a source or dll param");
 	}
 	if ( $source ) {
 		$self->_move( $source => $dll );
@@ -2880,11 +2964,11 @@ sub _dll_to_a {
 	SCOPE: {
 		my $bin = $self->bin_pexports;
 		unless ( $bin ) {
-			croak("Required method bin_pexports is not defined");
+			Carp::croak("Required method bin_pexports is not defined");
 		}
 		my $ok = ! system("$bin $dll > $def");
 		unless ( $ok and -f $def ) {
-			croak("Failed to generate .def file");
+			Carp::croak("Failed to generate .def file");
 		}
 	}
 
@@ -2892,15 +2976,44 @@ sub _dll_to_a {
 	SCOPE: {
 		my $bin = $self->bin_dlltool;
 		unless ( $bin ) {
-			croak("Required method bin_dlltool is not defined");
+			Carp::croak("Required method bin_dlltool is not defined");
 		}
 		my $ok = ! system("$bin -dllname $dll --def $def --output-lib $_a");
 		unless ( $ok and -f $_a ) {
-			croak("Failed to generate .a file");
+			Carp::croak("Failed to generate .a file");
 		}
 	}
 
 	return 1;
+}
+
+sub make_path {
+	my $class = shift;
+	my $dir   = File::Spec->rel2abs(
+		File::Spec->catdir(
+			File::Spec->curdir, @_,
+		),
+	);
+	File::Path::mkpath( $dir ) unless -d $dir;
+	unless ( -d $dir ) {
+		Carp::croak("Failed to make_path for $dir");
+	}
+	return $dir;
+}
+
+sub remake_path {
+	my $class = shift;
+	my $dir   = File::Spec->rel2abs(
+		File::Spec->catdir(
+			File::Spec->curdir, @_,
+		),
+	);
+	File::Remove::remove( \1, $dir ) if -d $dir;
+	File::Path::mkpath( $dir );
+	unless ( -d $dir ) {
+		Carp::croak("Failed to make_path for $dir");
+	}
+	return $dir;
 }
 
 1;

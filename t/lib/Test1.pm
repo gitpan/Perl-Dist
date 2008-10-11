@@ -1,11 +1,12 @@
 package t::lib::Test1;
 
 use strict;
-use base 'Perl::Dist::Inno';
+use Perl::Dist::Inno;
 
-use vars qw{$VERSION};
+use vars qw{$VERSION @ISA};
 BEGIN {
-	$VERSION = '1.04';
+	$VERSION = '1.05_01';
+	@ISA     = 'Perl::Dist::Inno';
 }
 
 
@@ -29,27 +30,23 @@ sub output_base_filename { 'test-perl-5.8.8-alpha-1' }
 #####################################################################
 # Main Methods
 
+sub new {
+	return shift->SUPER::new(
+		perl_version => 588,
+		@_,
+	);
+}
+
 sub run {
 	my $self = shift;
 
 	# Just install a single binary
-	$self->install_binary(
-		name    => 'dmake',
-		share   => 'Perl-Dist-Downloads dmake-4.8-20070327-SHAY.zip',
-		license => {
-			'dmake/COPYING'            => 'dmake/COPYING',
-			'dmake/readme/license.txt' => 'dmake/license.txt',
-		},
-		install_to => {
-			'dmake/dmake.exe' => 'dmake/bin/dmake.exe',	
-			'dmake/startup'   => 'dmake/bin/startup',
-		},
-	);
+	$self->checkpoint_task( install_dmake => 1 );
 
 	return 1;
 }
 
-sub trace { Test::More::diag($_[1]) }
+sub trace { 1 } # Test::More::diag($_[1]) }
 
 sub install_binary {
 	return shift->SUPER::install_binary( @_, trace => sub { 1 } );

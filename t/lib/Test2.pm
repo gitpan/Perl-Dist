@@ -1,11 +1,12 @@
 package t::lib::Test2;
 
 use strict;
-use base 'Perl::Dist';
+use Perl::Dist ();
 
-use vars qw{$VERSION};
+use vars qw{$VERSION @ISA};
 BEGIN {
-	$VERSION = '1.04';
+	$VERSION = '1.05_01';
+	@ISA     = 'Perl::Dist';
 }
 
 
@@ -29,6 +30,13 @@ sub output_base_filename { 'test-perl-5.8.8-alpha-1' }
 #####################################################################
 # Main Methods
 
+sub new {
+	return shift->SUPER::new(
+		perl_version => 588,
+		@_,
+	);
+}
+
 sub run {
 	my $self = shift;
 
@@ -40,12 +48,6 @@ sub run {
 
 	# Install Perl 5.8.8
 	$self->install_perl_588;
-
-	# Install the CPAN configuration
-	$self->install_file(
-		share      => 'Perl-Dist Config.pm',
-		install_to => 'perl/lib/CPAN/Config.pm',
-	);
 
 	# Install a test distro
 	$self->install_distribution(
@@ -61,20 +63,20 @@ sub install_binary {
 	return shift->SUPER::install_binary( @_, trace => sub { 1 } );
 }
 
-sub install_perl_588_bin {
-	return shift->SUPER::install_perl_588_bin( @_, trace => sub { 1 } );
-}
-
-sub install_perl_588_toolchain {
-	return shift->SUPER::install_perl_588_toolchain( @_, trace => sub { 1 } );
-}
-
 sub install_distribution {
 	return shift->SUPER::install_distribution( @_, trace => sub { 1 } );
 }
 
 sub install_file {
 	return shift->SUPER::install_file( @_, trace => sub { 1 } );
+}
+
+sub install_perl_588_bin {
+	return shift->SUPER::install_perl_588_bin( @_, trace => sub { 1 } );
+}
+
+sub install_perl_588_toolchain {
+	return shift->SUPER::install_perl_588_toolchain( @_, trace => sub { 1 } );
 }
 
 1;
