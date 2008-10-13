@@ -35,10 +35,10 @@ MANIFEST			This list of files
 META.yml
 README
 script/perldist
-share/default/perl-5.10.0/lib/CPAN/Config.pm
+share/default/perl-5.10.0/lib/CPAN/Config.pm.tt
 share/default/perl-5.10.0/lib/ExtUtils/Command.pm
 share/default/perl-5.10.0/win32/makefile.mk.tt
-share/default/perl-5.8.8/lib/CPAN/Config.pm
+share/default/perl-5.8.8/lib/CPAN/Config.pm.tt
 share/default/perl-5.8.8/lib/ExtUtils/Install.pm
 share/default/perl-5.8.8/lib/ExtUtils/Installed.pm
 share/default/perl-5.8.8/lib/ExtUtils/MM_Win32.pm
@@ -81,3 +81,4 @@ t/lib/Test.pm
 t/lib/Test1.pm
 t/lib/Test2.pm
 t/lib/Test3.pm
+t/lib/Test4.pm

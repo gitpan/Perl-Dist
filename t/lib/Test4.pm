@@ -1,4 +1,4 @@
-package t::lib::Test3;
+package t::lib::Test4;
 
 use strict;
 use Perl::Dist ();
@@ -33,6 +33,7 @@ sub output_base_filename { 'test-perl-5.10.0-alpha-1' }
 sub new {
 	return shift->SUPER::new(
 		perl_version => 5100,
+		portable     => 1,
 		@_,
 	);
 }
