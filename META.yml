@@ -24,9 +24,10 @@ no_index:
 requires:
   Archive::Tar: 1.38
   Archive::Zip: 1.25
-  CPAN: 1.9205
+  CPAN: 1.93
   File::Copy::Recursive: 0.37
   File::Find::Rule: 0.30
+  File::HomeDir: 0.81
   File::Path: 2.04
   File::PathList: 1.04
   File::Remove: 1.42
@@ -54,4 +55,4 @@ requires:
   perl: 5.6.0
 resources:
   license: http://dev.perl.org/licenses/
-version: 1.05_03
+version: 1.05_04
