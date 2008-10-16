@@ -13,7 +13,7 @@ use Process              ();
 
 use vars qw{$VERSION @ISA @DELEGATE};
 BEGIN {
-	$VERSION  = '1.05_04';
+	$VERSION  = '1.06';
 	@ISA      = qw{
 		Process::Delegatable
 		Process::Storable
@@ -59,7 +59,10 @@ my %MODULES = (
 		File::HomeDir
 		File::Which
 		Archive::Zip
+		Package::Constants
+		IO::String
 		Archive::Tar
+		Parse::CPAN::Meta
 		YAML
 		Net::FTP
 		Digest::MD5
@@ -72,7 +75,6 @@ my %MODULES = (
 		Term::ReadLine::Perl
 		Text::Glob
 		Data::Dumper
-
 		URI
 		HTML::Tagset
 		HTML::Parser
