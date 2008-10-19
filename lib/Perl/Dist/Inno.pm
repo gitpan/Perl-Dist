@@ -155,7 +155,7 @@ use Perl::Dist::Inno::Script   ();
 
 use vars qw{$VERSION @ISA};
 BEGIN {
-        $VERSION  = '1.06';
+        $VERSION  = '1.08';
 	@ISA      = 'Perl::Dist::Inno::Script';
 }
 
@@ -435,7 +435,7 @@ sub new {
 		$self->{exe} = 1;
 	}
 	unless ( defined $self->zip ) {
-		$self->{zip} = 0;
+		$self->{zip} = $self->portable ? 1 : 0;
 	}
 	unless ( defined $self->checkpoint_before ) {
 		$self->{checkpoint_before} = 0;
@@ -455,7 +455,6 @@ sub new {
 
 	# Handle portable special cases
 	if ( $self->portable ) {
-		$self->{zip} = 1;
 		$self->{exe} = 0;
 	}
 
@@ -507,12 +506,6 @@ sub new {
 			$self->output_dir, $self->app_id . '.iss'
 		);
 	}
-	unless ( defined $self->exe ) {
-		$self->{exe} = 1;
-	}
-	unless ( defined $self->zip ) {
-		$self->{zip} = 1;
-	}
 
 	# Clear the previous build
 	if ( -d $self->image_dir ) {
@@ -554,6 +547,9 @@ sub new {
 	# Set some common environment variables
 	$self->add_env( TERM        => 'dumb' );
 	$self->add_env( FTP_PASSIVE => 1      );
+
+	# Initialize the output valuse
+	$self->{output_file} = [];
 
         return $self;
 }
@@ -632,7 +628,7 @@ sub checkpoint_file {
 }
 
 sub checkpoint_self {
-
+	die "CODE INCOMPLETE";
 }
 
 sub checkpoint_save {
@@ -666,7 +662,6 @@ sub checkpoint_save {
 
 	return 1;
 }
-
 
 
 
@@ -778,6 +773,11 @@ sub run {
 	my $self  = shift;
 	my $start = time;
 
+	unless ( $self->exe or $self->zip ) {
+		$self->trace("No exe or zip target, nothing to do");
+		return 1;
+	}
+
 	# Install the core C toolchain
 	$self->checkpoint_task( install_c_toolchain  => 1 );
 
@@ -882,9 +882,7 @@ sub install_c_toolchain {
 	$self->install_win32api;
 
 	# Set up the environment variables for the binaries
-	$self->add_env_path(    'c', 'bin'     );
-	# $self->add_env_lib(     'c', 'lib'     );
-	# $self->add_env_include( 'c', 'include' );
+	$self->add_env_path( 'c', 'bin' );
 
 	return 1;
 }
@@ -1037,18 +1035,26 @@ sub install_portable {
 sub install_win32_extras {
 	my $self = shift;
 
-	$self->install_website(
-		name => 'CPAN Search',
-		url  => 'http://search.cpan.org/',
-	);
 	$self->install_launcher(
 		name => 'CPAN Client',
 		bin  => 'cpan',
 	);
 	$self->install_website(
-		name => 'Perl Documentation',
-		url  => 'http://perldoc.perl.org/',
+		name => 'CPAN Search',
+		url  => 'http://search.cpan.org/',
 	);
+	if ( $self->perl_version_human eq '5.8.8' ) {
+		$self->install_website(
+			name => 'Perl 5.8.8 Documentation',
+			url  => 'http://perldoc.perl.org/5.8.8/',
+		);
+	}
+	if ( $self->perl_version_human eq '5.10.0' ) {
+		$self->install_website(
+			name => 'Perl 5.10.0 Documentation',
+			url  => 'http://perldoc.perl.org/',
+		);
+	}
 	$self->install_website(
 		name => 'Win32 Perl Wiki',
 		url  => 'http://win32.perl.org/',
@@ -1223,8 +1229,6 @@ sub install_perl_588_bin {
 
 	# Add to the environment variables
 	$self->add_env_path( 'perl', 'bin' );
-	# $self->add_env_lib(  'perl', 'bin' );
-	# $self->add_env_include( 'perl', 'lib', 'CORE' );
 
 	return 1;
 }
@@ -1405,8 +1409,6 @@ sub install_perl_5100_bin {
 
 	# Add to the environment variables
 	$self->add_env_path( 'perl', 'bin' );
-	# $self->add_env_lib(  'perl', 'bin' );
-	# $self->add_env_include( 'perl', 'lib', 'CORE' );
 
 	return 1;
 }
@@ -3101,7 +3103,7 @@ Adam Kennedy E<lt>adamk@cpan.orgE<gt>
 
 =head1 SEE ALSO
 
-L<Perl::Dist>, L<http://ali.as/>
+L<Perl::Dist>, L<vanillaperl.com>, L<http://ali.as/>
 
 =head1 COPYRIGHT
 
