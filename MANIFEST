@@ -49,6 +49,8 @@ share/default/perl-5.8.8/lib/ExtUtils/t/Installapi2.t
 share/default/perl-5.8.8/lib/ExtUtils/t/Installed.t
 share/default/perl-5.8.8/lib/ExtUtils/t/Packlist.t
 share/default/perl-5.8.8/win32/makefile.mk.tt
+share/default/perl-5.8.9-RC1/lib/CPAN/Config.pm.tt
+share/default/perl-5.8.9-RC1/win32/makefile.mk.tt
 share/portable.perl
 share/vanilla/libexpat-vanilla.par
 share/vanilla/libexpat-vanilla.zip
@@ -72,6 +74,7 @@ t/15_perl_5100.t
 t/16_vanilla_new.t
 t/17_vanilla_run.t
 t/18_portable.t
+t/19_perl_589.t
 t/97_meta.t
 t/98_pod.t
 t/99_pmv.t
@@ -81,3 +84,4 @@ t/lib/Test1.pm
 t/lib/Test2.pm
 t/lib/Test3.pm
 t/lib/Test4.pm
+t/lib/Test5.pm

@@ -1,4 +1,4 @@
-package t::lib::Test2;
+package t::lib::Test5;
 
 use strict;
 use Perl::Dist ();
@@ -21,7 +21,7 @@ sub app_ver_name         { 'Test Perl 1 alpha 1'     }
 sub app_publisher        { 'Vanilla Perl Project'    }
 sub app_publisher_url    { 'http://vanillaperl.org'  }
 sub app_id               { 'testperl'                }
-sub output_base_filename { 'test-perl-5.8.8-alpha-1' }
+sub output_base_filename { 'test-perl-5.8.9-alpha-1' }
 
 
 
@@ -32,7 +32,7 @@ sub output_base_filename { 'test-perl-5.8.8-alpha-1' }
 
 sub new {
 	return shift->SUPER::new(
-		perl_version => 588,
+		perl_version => 589,
 		@_,
 	);
 }
@@ -47,7 +47,7 @@ sub run {
 	$self->install_c_libraries;
 
 	# Install Perl 5.8.8
-	$self->install_perl_588;
+	$self->install_perl_589;
 
 	# Install a test distro
 	$self->install_distribution(
@@ -71,12 +71,12 @@ sub install_file {
 	return shift->SUPER::install_file( @_, trace => sub { 1 } );
 }
 
-sub install_perl_588_bin {
-	return shift->SUPER::install_perl_588_bin( @_, trace => sub { 1 } );
+sub install_perl_589_bin {
+	return shift->SUPER::install_perl_589_bin( @_, trace => sub { 1 } );
 }
 
-sub install_perl_588_toolchain {
-	return shift->SUPER::install_perl_588_toolchain( @_, trace => sub { 1 } );
+sub install_perl_589_toolchain {
+	return shift->SUPER::install_perl_589_toolchain( @_, trace => sub { 1 } );
 }
 
 1;

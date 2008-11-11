@@ -11,10 +11,11 @@ use t::lib::Test1 ();
 use t::lib::Test2 ();
 use t::lib::Test3 ();
 use t::lib::Test4 ();
+use t::lib::Test5 ();
 
 use vars qw{$VERSION};
 BEGIN {
-	$VERSION = '1.08';
+	$VERSION = '1.10';
 }
 
 
@@ -84,6 +85,10 @@ sub new3 {
 
 sub new4 {
 	return t::lib::Test4->new( shift->paths(@_) );
+}
+
+sub new5 {
+	return t::lib::Test5->new( shift->paths(@_) );
 }
 
 1;
