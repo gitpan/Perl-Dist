@@ -6,7 +6,7 @@ use Perl::Dist::Inno ();
 
 use vars qw{$VERSION @ISA};
 BEGIN {
-        $VERSION = '1.10';
+        $VERSION = '1.11';
 	@ISA     = 'Perl::Dist::Inno';
 }
 
@@ -127,7 +127,7 @@ David A. Golden <dagolden@cpan.org>
 
 =head1 COPYRIGHT
 
-Copyright 2007 - 2008 Adam Kennedy.
+Copyright 2007 - 2009 Adam Kennedy.
 
 Copyright 2006 David A. Golden.
 

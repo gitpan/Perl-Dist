@@ -41,6 +41,7 @@ requires:
   LWP::Online: 1.07
   LWP::UserAgent: 5.817
   LWP::UserAgent::Determined: 1.03
+  LWP::UserAgent::WithCache: 0.06
   Module::CoreList: 2.15
   Object::Tiny: 1.06
   PAR::Dist: 0.37
@@ -55,4 +56,4 @@ requires:
   perl: 5.6.0
 resources:
   license: http://dev.perl.org/licenses/
-version: 1.10
+version: 1.11

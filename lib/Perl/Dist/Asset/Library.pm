@@ -56,7 +56,7 @@ use Perl::Dist::Asset ();
 
 use vars qw{$VERSION @ISA};
 BEGIN {
-	$VERSION = '1.10';
+	$VERSION = '1.11';
 	@ISA     = 'Perl::Dist::Asset';
 }
 
@@ -131,7 +131,7 @@ L<Perl::Dist>, L<Perl::Dist::Inno>, L<Perl::Dist::Asset>
 
 =head1 COPYRIGHT
 
-Copyright 2007 - 2008 Adam Kennedy.
+Copyright 2007 - 2009 Adam Kennedy.
 
 This program is free software; you can redistribute
 it and/or modify it under the same terms as Perl itself.
