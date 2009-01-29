@@ -5,6 +5,7 @@ inc/Module/Install/Can.pm
 inc/Module/Install/Fetch.pm
 inc/Module/Install/Makefile.pm
 inc/Module/Install/Metadata.pm
+inc/Module/Install/Scripts.pm
 inc/Module/Install/Share.pm
 inc/Module/Install/Win32.pm
 inc/Module/Install/WriteAll.pm
@@ -49,8 +50,8 @@ share/default/perl-5.8.8/lib/ExtUtils/t/Installapi2.t
 share/default/perl-5.8.8/lib/ExtUtils/t/Installed.t
 share/default/perl-5.8.8/lib/ExtUtils/t/Packlist.t
 share/default/perl-5.8.8/win32/makefile.mk.tt
-share/default/perl-5.8.9-RC1/lib/CPAN/Config.pm.tt
-share/default/perl-5.8.9-RC1/win32/makefile.mk.tt
+share/default/perl-5.8.9/lib/CPAN/Config.pm.tt
+share/default/perl-5.8.9/win32/makefile.mk.tt
 share/portable.perl
 share/vanilla/libexpat-vanilla.par
 share/vanilla/libexpat-vanilla.zip

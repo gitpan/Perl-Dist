@@ -127,7 +127,7 @@ use 5.006;
 use strict;
 use warnings;
 use Carp                      ();
-use Archive::Tar              ();
+use Archive::Tar         1.42 ();
 use Archive::Zip              ();
 use File::Spec                ();
 use File::Spec::Unix          ();
@@ -155,7 +155,7 @@ use Perl::Dist::Inno::Script  ();
 
 use vars qw{$VERSION @ISA};
 BEGIN {
-        $VERSION  = '1.11';
+        $VERSION  = '1.12';
 	@ISA      = 'Perl::Dist::Inno::Script';
 }
 
@@ -396,9 +396,6 @@ sub new {
 
 	# Find the core list
 	my $corelist_version = $self->perl_version_literal+0;
-	if ( $corelist_version == 5.008009 ) {
-		$corelist_version = 5.008008;
-	}
 	$self->{perl_version_corelist} = $Module::CoreList::version{$corelist_version};
 	unless ( Params::Util::_HASH($self->{perl_version_corelist}) ) {
 		Carp::croak("Failed to resolve Module::CoreList hash for " . $self->perl_version_human);
@@ -1075,6 +1072,7 @@ sub install_win32_extras {
 		name => 'CPAN Search',
 		url  => 'http://search.cpan.org/',
 	);
+
 	if ( $self->perl_version_human eq '5.8.8' ) {
 		$self->install_website(
 			name => 'Perl 5.8.8 Documentation',
@@ -1082,7 +1080,10 @@ sub install_win32_extras {
 		);
 	}
 	if ( $self->perl_version_human eq '5.8.9' ) {
-		# Don't link to anything
+		$self->install_website(
+			name => 'Perl 5.8.9 Documentation',
+			url  => 'http://perldoc.perl.org/5.8.9/',
+		);
 	}
 	if ( $self->perl_version_human eq '5.10.0' ) {
 		$self->install_website(
@@ -1090,6 +1091,7 @@ sub install_win32_extras {
 			url  => 'http://perldoc.perl.org/',
 		);
 	}
+
 	$self->install_website(
 		name => 'Win32 Perl Wiki',
 		url  => 'http://win32.perl.org/',
@@ -1308,9 +1310,9 @@ sub install_perl_589 {
 			lib/CPAN/Config.pm
 		} ],
 		license    => {
-			'perl-5.8.9-RC1/Readme'   => 'perl/Readme',
-			'perl-5.8.9-RC1/Artistic' => 'perl/Artistic',
-			'perl-5.8.9-RC1/Copying'  => 'perl/Copying',
+			'perl-5.8.9/Readme'   => 'perl/Readme',
+			'perl-5.8.9/Artistic' => 'perl/Artistic',
+			'perl-5.8.9/Copying'  => 'perl/Copying',
 		},
 	);
 
@@ -1354,7 +1356,7 @@ sub install_perl_589_bin {
 	if ( $patch ) {
 		# Overwrite the appropriate files
 		foreach my $file ( @$patch ) {
-			$self->patch_file( "perl-5.8.9-RC1/$file" => $unpack_to );
+			$self->patch_file( "perl-5.8.9/$file" => $unpack_to );
 		}
 	}
 
@@ -1374,7 +1376,7 @@ sub install_perl_589_bin {
 		my ($INST_DRV) = File::Spec->splitpath( $INST_TOP, 1 );
 
 		$self->trace("Patching makefile.mk\n");
-		$self->patch_file( 'perl-5.8.9-RC1/win32/makefile.mk' => $unpack_to, {
+		$self->patch_file( 'perl-5.8.9/win32/makefile.mk' => $unpack_to, {
 			dist     => $self,
 			INST_DRV => $INST_DRV,
 			INST_TOP => $INST_TOP,
