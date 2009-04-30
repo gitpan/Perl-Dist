@@ -8,6 +8,7 @@ inc/Module/Install/Metadata.pm
 inc/Module/Install/Scripts.pm
 inc/Module/Install/Share.pm
 inc/Module/Install/Win32.pm
+inc/Module/Install/With.pm
 inc/Module/Install/WriteAll.pm
 lib/Perl/Dist.pm
 lib/Perl/Dist/Asset.pm
@@ -70,12 +71,12 @@ t/10_asset_module.t
 t/11_machine.t
 t/12_util_toolchain.t
 t/13_dist_new.t
-t/14_perl_588.t
-t/15_perl_5100.t
-t/16_vanilla_new.t
-t/17_vanilla_run.t
-t/18_portable.t
-t/19_perl_589.t
+t/14_vanilla_new.t
+t/15_vanilla_run.t
+t/16_perl_588.t
+t/17_perl_589.t
+t/18_perl_5100.t
+t/19_portable.t
 t/97_meta.t
 t/98_pod.t
 t/99_pmv.t

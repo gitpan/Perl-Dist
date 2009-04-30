@@ -31,8 +31,8 @@ use t::lib::Test;
 # Complete Generation Run
 
 # Create the dist object
-my $dist = t::lib::Test->new2(14);
-isa_ok( $dist, 't::lib::Test2' );
+my $dist = t::lib::Test->new3(18);
+isa_ok( $dist, 't::lib::Test3' );
 
 # Run the dist object, and ensure everything we expect was created
 diag( "Building test dist, may take up to an hour... (sorry)" );
@@ -40,38 +40,38 @@ ok( $dist->run, '->run ok' );
 
 # C toolchain files
 ok(
-	-f catfile( qw{ t tmp14 image c bin dmake.exe } ),
+	-f catfile( qw{ t tmp18 image c bin dmake.exe } ),
 	'Found dmake.exe',
 );
 ok(
-	-f catfile( qw{ t tmp14 image c bin startup Makefile.in } ),
+	-f catfile( qw{ t tmp18 image c bin startup Makefile.in } ),
 	'Found startup',
 );
 ok(
-	-f catfile( qw{ t tmp14 image c bin pexports.exe } ),
+	-f catfile( qw{ t tmp18 image c bin pexports.exe } ),
 	'Found pexports',
 );
 
 # Perl core files
 ok(
-	-f catfile( qw{ t tmp14 image perl bin perl.exe } ),
+	-f catfile( qw{ t tmp18 image perl bin perl.exe } ),
 	'Found perl.exe',
 );
 
 # Toolchain files
 ok(
-	-f catfile( qw{ t tmp14 image perl site lib LWP.pm } ),
+	-f catfile( qw{ t tmp18 image perl site lib LWP.pm } ),
 	'Found LWP.pm',
 );
 
 # Custom installed file
 ok(
-	-f catfile( qw{ t tmp14 image perl site lib Config Tiny.pm } ),
+	-f catfile( qw{ t tmp18 image perl site lib Config Tiny.pm } ),
 	'Found Config::Tiny',
 );
 
-# Did we build 5.8.8?
+# Did we build 5.10.0?
 ok(
-	-f catfile( qw{ t tmp14 image perl bin perl58.dll } ),
-	'Found Perl 5.8.8 DLL',
+	-f catfile( qw{ t tmp18 image perl bin perl510.dll } ),
+	'Found Perl 5.10.0 DLL',
 );

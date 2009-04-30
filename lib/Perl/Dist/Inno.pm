@@ -155,7 +155,7 @@ use Perl::Dist::Inno::Script  ();
 
 use vars qw{$VERSION @ISA};
 BEGIN {
-        $VERSION  = '1.12';
+        $VERSION  = '1.13';
 	@ISA      = 'Perl::Dist::Inno::Script';
 }
 
@@ -966,6 +966,12 @@ sub install_perl_toolchain {
 			# Does something weird with tainting
 			$force = 1;
 		}
+		if ( $dist =~ /URI-/ ) {
+			# Can't rely on t/heuristic.t not finding a www.perl.bv
+			# because some ISP's use DNS redirectors for unfindable
+			# sites.
+			$force = 1;
+ 	 	}
 		if ( $dist =~ /Term-ReadLine-Perl/ ) {
 			# Does evil things when testing, and
 			# so testing cannot be automated.
@@ -1439,6 +1445,7 @@ sub install_perl_5100 {
 	) or die("Failed to resolve toolchain modules");
 	$toolchain->delegate;
 	if ( $toolchain->{errstr} ) {
+		print "Error: $toolchain->{errstr}\n"; 
 		die("Failed to generate toolchain distributions");
 	}
 
@@ -3119,13 +3126,18 @@ sub _run3 {
 		next if -f File::Spec->catfile( $p, 'dmake.exe' );
 		next if -f File::Spec->catfile( $p, 'perl.exe'  );
 
+		# Strip any path that contains either unzip or gzip.exe.
+		# These two programs cause perl to fail its own tests.
+		next if -f File::Spec->catfile( $p, 'unzip.exe' );
+		next if -f File::Spec->catfile( $p, 'gzip.exe' );
+
 		push @keep, $p;
 	}
 
 	# Reset the environment
-	local $ENV{LIB}      = undef;
-	local $ENV{INCLUDE}  = undef;
-	local $ENV{PERL5LIB} = undef;
+	local $ENV{LIB}      = '';
+	local $ENV{INCLUDE}  = '';
+	local $ENV{PERL5LIB} = '';
 	local $ENV{PATH}     = $self->get_env_path . ';' . join( ';', @keep );
 
 	# Execute the child process

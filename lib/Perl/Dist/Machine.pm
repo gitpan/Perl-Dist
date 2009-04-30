@@ -30,7 +30,7 @@ use File::HomeDir ();
 
 use vars qw{$VERSION};
 BEGIN {
-	$VERSION = '1.12';
+	$VERSION = '1.13';
 }
 
 use Object::Tiny qw{
@@ -58,7 +58,9 @@ sub new {
 	}, $class;
 
 	# Check params
-	unless ( _DRIVER($self->class, 'Perl::Dist::Inno') ) {
+	unless ( 
+		_DRIVER($self->class, 'Perl::Dist::Inno') or
+		_DRIVER($self->class, 'Perl::Dist::WiX') ) {
 		croak("Missing or invalid class param");
 	}
 	unless ( defined $self->output ) {
